@@ -3,7 +3,6 @@ import { useFetcher, useLoaderData } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { TitleBar } from "@shopify/app-bridge-react";
 import sharp from "sharp";
-import fetch from "node-fetch";
 import FormData from "form-data";
 import path from "path";
 import fs from "fs";
@@ -136,7 +135,8 @@ export const action = async ({ request }) => {
     }
 
     const imageUrl = imageSrc.split("?")[0];
-    const imageBuffer = await (await fetch(imageUrl)).buffer();
+    const imageResponse = await fetch(imageUrl);
+    const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
     const originalSizeKB = (imageBuffer.length / 1024).toFixed(2);
 
     let processedBuffer;
