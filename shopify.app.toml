@@ -2,7 +2,7 @@
 
 client_id = "db1e6be68214403a5bc1fe7c2870924c"
 name = "PixelMint Studio"
-application_url = "https://example.com"
+application_url = "https://pixelmint.solnix.store"
 embedded = true
 handle = "pixelmint-studio"
 
@@ -17,4 +17,4 @@ api_version = "2026-07"
 scopes = "read_products,write_products"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://pixelmint.solnix.store/auth/callback" ]
