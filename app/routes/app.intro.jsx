@@ -74,7 +74,7 @@ export default function IntroPage() {
       <TitleBar title={BRAND.name} />
       <BlockStack gap="500">
         <Box
-          padding="600"
+          padding="700"
           borderRadius="300"
           background="bg-fill-brand"
           style={{
@@ -82,33 +82,94 @@ export default function IntroPage() {
             color: "#f7f2e8",
           }}
         >
-          <BlockStack gap="400">
-            <InlineStack align="space-between" blockAlign="center">
-              <Text as="p" variant="bodySm" tone="subdued">
-                Overview
-              </Text>
-              <Text as="p" variant="bodySm">
-                Active plan: {activePlan}
-              </Text>
-            </InlineStack>
-            <BlockStack gap="200">
-              <Text as="h1" variant="heading2xl">
-                Turn raw product imagery into retail-ready assets.
-              </Text>
-              <Text as="p" variant="bodyLg">
-                {BRAND.name} gives your team a tighter image workflow for Shopify: lighter files,
-                clearer branding, and a cleaner handoff from ops to merchandising.
-              </Text>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 2fr) minmax(260px, 0.9fr)",
+              gap: "28px",
+              alignItems: "stretch",
+            }}
+          >
+            <BlockStack gap="400">
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignSelf: "flex-start",
+                  padding: "8px 14px",
+                  borderRadius: "999px",
+                  background: "rgba(255, 255, 255, 0.14)",
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                }}
+              >
+                <Text as="p" variant="bodySm">
+                  Overview
+                </Text>
+              </div>
+
+              <BlockStack gap="300">
+                <div style={{ maxWidth: "980px" }}>
+                  <Text as="h1" variant="heading2xl">
+                    Turn raw product imagery into retail-ready assets.
+                  </Text>
+                </div>
+                <div style={{ maxWidth: "760px" }}>
+                  <Text as="p" variant="bodyLg">
+                    {BRAND.name} gives your team a tighter image workflow for Shopify: lighter
+                    files, clearer branding, and a cleaner handoff from ops to merchandising.
+                  </Text>
+                </div>
+              </BlockStack>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "14px",
+                }}
+              >
+                <PersistentLink to="/app">
+                  <Button variant="primary">View plans</Button>
+                </PersistentLink>
+                <PersistentLink to="/app/html">
+                  <Button>{activePlan === "Scale" ? "Open studio" : "Explore studio"}</Button>
+                </PersistentLink>
+              </div>
             </BlockStack>
-            <InlineStack gap="300">
-              <PersistentLink to="/app">
-                <Button variant="primary">View plans</Button>
-              </PersistentLink>
-              <PersistentLink to={activePlan === "Scale" ? "/app/html" : "/app"}>
-                <Button>{activePlan === "Scale" ? "Open studio" : "Review options"}</Button>
-              </PersistentLink>
-            </InlineStack>
-          </BlockStack>
+
+            <div
+              style={{
+                borderRadius: "24px",
+                padding: "24px",
+                background: "rgba(255, 255, 255, 0.12)",
+                border: "1px solid rgba(255, 255, 255, 0.14)",
+                display: "grid",
+                gap: "18px",
+                alignContent: "start",
+              }}
+            >
+              <div>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Active plan
+                </Text>
+                <div style={{ marginTop: "8px" }}>
+                  <Text as="h2" variant="headingLg">
+                    {activePlan}
+                  </Text>
+                </div>
+              </div>
+              <div>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Access
+                </Text>
+                <div style={{ marginTop: "8px" }}>
+                  <Text as="p" variant="bodyMd">
+                    Starter opens the workspace preview, Core adds optimization, and Scale adds
+                    watermarking.
+                  </Text>
+                </div>
+              </div>
+            </div>
+          </div>
         </Box>
 
         <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
