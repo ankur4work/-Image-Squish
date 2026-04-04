@@ -41,11 +41,11 @@ export function isBillingTestMode() {
 }
 
 export function getDisplayPlanName(planName) {
-  if (planName === "Pro Monthly subscription") {
+  if (planName === "Scale") {
     return "Scale";
   }
 
-  if (planName === "Monthly subscription") {
+  if (planName === "Core") {
     return "Core";
   }
 

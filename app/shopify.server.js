@@ -10,8 +10,8 @@ import { restResources } from "@shopify/shopify-api/rest/admin/2025-04";
 import prisma from "./db.server";
 
 export const FREE_PLAN = "Free plan";
-export const MONTHLY_PLAN = "Monthly subscription";
-export const PRO_MONTHLY_PLAN = "Pro Monthly subscription";
+export const MONTHLY_PLAN = "Core";
+export const PRO_MONTHLY_PLAN = "Scale";
 export const apiVersion = "2025-04";
 
 function isWebhookRegistrationErrorBypassable(error) {

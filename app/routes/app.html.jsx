@@ -87,10 +87,10 @@ export const loader = async ({ request }) => {
     request,
     billing,
     session,
-    plans: ["Pro Monthly subscription"],
+    plans: ["Scale"],
     onFailure: async () =>
       billing.request({
-        plan: "Pro Monthly subscription",
+        plan: "Scale",
         isTest: isBillingTestMode(),
         returnUrl: getAppReturnUrl({ request, shopDomain: shop }),
       }),

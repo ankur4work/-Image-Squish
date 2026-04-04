@@ -22,8 +22,8 @@ export const loader = async ({ request }) => {
   const { billing, session } = await authenticate.admin(request);
   const { shop } = session;
 
-  const monthlyPlan = "Monthly subscription";
-  const proMonthlyPlan = "Pro Monthly subscription";
+  const monthlyPlan = "Core";
+  const proMonthlyPlan = "Scale";
 
   const billingCheck = await getBillingStatusOrFree({
     request,
