@@ -1,3 +1,10 @@
-name = "pixelmint-theme"
+api_version = "2026-07"
+
+[[extensions]]
+name = "PixelMint Theme"
+handle = "pixelmint-theme"
 type = "theme"
-uid = "9c9a5fa9-4dae-4761-6b02-3ca408dfefdedf2de77f"
+
+  [[extensions.blocks]]
+  name = "Product media note"
+  handle = "product-media-note"
