@@ -35,6 +35,7 @@ export async function loader({ request }) {
   return json({
     plan: activePlan,
     shop: session.shop,
+    hasPaidPlan: billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0,
   });
 }
 
@@ -147,7 +148,7 @@ const styles = {
 };
 
 export default function PricingPage() {
-  const { plan } = useLoaderData();
+  const { plan, hasPaidPlan } = useLoaderData();
   const activePlanName = plan.name;
   const activeDisplayName = getDisplayPlanName(activePlanName);
 
@@ -274,22 +275,24 @@ export default function PricingPage() {
           })}
         </div>
 
-        <Card>
-          <InlineStack align="space-between" blockAlign="center">
-            <BlockStack gap="100">
-              <Text as="h2" variant="headingMd">
-                Need to step back from a paid tier?
-              </Text>
-              <Text as="p" variant="bodyMd" tone="subdued">
-                You can cancel your current paid subscription and return to a lighter setup from
-                the account tools below.
-              </Text>
-            </BlockStack>
-            <PersistentLink to="/app/cancel">
-              <Button tone="critical">Cancel current plan</Button>
-            </PersistentLink>
-          </InlineStack>
-        </Card>
+        {hasPaidPlan ? (
+          <Card>
+            <InlineStack align="space-between" blockAlign="center">
+              <BlockStack gap="100">
+                <Text as="h2" variant="headingMd">
+                  Need to step back from a paid tier?
+                </Text>
+                <Text as="p" variant="bodyMd" tone="subdued">
+                  You can cancel your current paid subscription and return to a lighter setup from
+                  the account tools below.
+                </Text>
+              </BlockStack>
+              <PersistentLink to="/app/cancel">
+                <Button tone="critical">Cancel current plan</Button>
+              </PersistentLink>
+            </InlineStack>
+          </Card>
+        ) : null}
       </BlockStack>
     </Page>
   );

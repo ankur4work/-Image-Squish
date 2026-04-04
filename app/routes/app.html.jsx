@@ -6,10 +6,9 @@ import sharp from "sharp";
 import FormData from "form-data";
 import path from "path";
 import fs from "fs";
-import db from "../db.server";
 import { apiVersion, authenticate } from "../shopify.server";
-import { BRAND, getAppReturnUrl, isBillingTestMode } from "../lib/brand";
-import { requireBillingSafely } from "../lib/billing.server";
+import { BRAND, getDisplayPlanName } from "../lib/brand";
+import { getBillingStatusOrFree } from "../lib/billing.server";
 
 const productQuery = `
 {
@@ -83,21 +82,28 @@ export const loader = async ({ request }) => {
   const { billing, session } = await authenticate.admin(request);
   const { shop, accessToken } = session;
 
-  await requireBillingSafely({
+  const billingCheck = await getBillingStatusOrFree({
     request,
     billing,
     session,
-    plans: ["Scale"],
-    onFailure: async () =>
-      billing.request({
-        plan: "Scale",
-        isTest: isBillingTestMode(),
-        returnUrl: getAppReturnUrl({ request, shopDomain: shop }),
-      }),
+    plans: ["Core", "Scale"],
   });
 
+  let activePlan = "Free";
+
+  if (billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0) {
+    activePlan = billingCheck.appSubscriptions[0].name;
+  }
+
   if (!accessToken) {
-    return json({ products: [], shop });
+    return json({
+      products: [],
+      shop,
+      activePlan,
+      activeDisplayPlan: getDisplayPlanName(activePlan),
+      canCompress: activePlan === "Core" || activePlan === "Scale",
+      canWatermark: activePlan === "Scale",
+    });
   }
 
   const response = await fetch(`https://${shop}/admin/api/${apiVersion}/graphql.json`, {
@@ -112,23 +118,63 @@ export const loader = async ({ request }) => {
   const result = await response.json();
   const products = result?.data?.products?.edges || [];
 
-  return json({ products, shop });
+  return json({
+    products,
+    shop,
+    activePlan,
+    activeDisplayPlan: getDisplayPlanName(activePlan),
+    canCompress: activePlan === "Core" || activePlan === "Scale",
+    canWatermark: activePlan === "Scale",
+  });
 };
 
 export const action = async ({ request }) => {
   try {
+    const { billing, session } = await authenticate.admin(request);
     const requestFormData = await request.formData();
-    const { mediaId, imageSrc, type, shop, productId } = Object.fromEntries(
+    const { mediaId, imageSrc, type, productId } = Object.fromEntries(
       requestFormData.entries(),
     );
     const watermarkFile = requestFormData.get("watermark");
 
-    if (!mediaId || !imageSrc || !shop || !type || !productId) {
+    if (!mediaId || !imageSrc || !type || !productId) {
       throw new Error("Missing required fields.");
     }
 
-    const session = await db.session.findFirst({ where: { shop } });
-    const accessToken = session?.accessToken;
+    const billingCheck = await getBillingStatusOrFree({
+      request,
+      billing,
+      session,
+      plans: ["Core", "Scale"],
+    });
+
+    let activePlan = "Free";
+
+    if (billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0) {
+      activePlan = billingCheck.appSubscriptions[0].name;
+    }
+
+    if (type === "compress" && activePlan !== "Core" && activePlan !== "Scale") {
+      return json(
+        {
+          success: false,
+          message: "Image optimization is available on the Core and Scale plans.",
+        },
+        { status: 403 },
+      );
+    }
+
+    if (type === "watermark" && activePlan !== "Scale") {
+      return json(
+        {
+          success: false,
+          message: "Watermarking is available on the Scale plan.",
+        },
+        { status: 403 },
+      );
+    }
+
+    const { shop, accessToken } = session;
 
     if (!accessToken) {
       throw new Error("Access token not found.");
@@ -593,7 +639,7 @@ function NotificationBanner({ notification }) {
 }
 
 export default function StudioPage() {
-  const { products, shop } = useLoaderData();
+  const { products, shop, activeDisplayPlan, canCompress, canWatermark } = useLoaderData();
   const fetcher = useFetcher();
   const [loadingId, setLoadingId] = useState(null);
   const [watermark, setWatermark] = useState(null);
@@ -679,14 +725,14 @@ export default function StudioPage() {
               <div style={styles.badge}>Premium image workflow</div>
               <h1 style={styles.heroTitle}>A sharper editing surface for product media.</h1>
               <p style={styles.heroBody}>
-                {BRAND.name} reframes the old utility view into a studio-like workspace for compression,
-                watermarking, and catalog cleanup inside Shopify admin.
+                {BRAND.name} gives merchants a single workspace for image optimization and
+                watermarking inside Shopify admin.
               </p>
 
               <div style={styles.heroStats}>
                 <SummaryStat number={products.length} label="Catalog items loaded" />
                 <SummaryStat number={processedCount} label="Updated this session" />
-                <SummaryStat number={watermark ? "Ready" : "Default"} label="Watermark source" />
+                <SummaryStat number={activeDisplayPlan} label="Current plan" />
               </div>
             </div>
 
@@ -717,6 +763,14 @@ export default function StudioPage() {
               Upload a PNG or image file to apply your own mark. If you skip this step, the app falls back
               to the default watermark asset in the project.
             </p>
+
+            {!canCompress || !canWatermark ? (
+              <div style={{ ...styles.noteItem, marginTop: "18px" }}>
+                {canCompress
+                  ? "Watermarking unlocks on the Scale plan."
+                  : "Starter includes a studio preview. Upgrade to Core for optimization or Scale for watermarking."}
+              </div>
+            ) : null}
 
             <input
               id="watermark-upload"
@@ -797,37 +851,41 @@ export default function StudioPage() {
                             <div style={styles.actionRow}>
                               <button
                                 type="button"
-                                disabled={isBusy}
+                                disabled={isBusy || !canCompress}
                                 onClick={() =>
                                   handleClick(currentMediaId, currentImage, "compress", node.id)
                                 }
                                 style={{
                                   ...styles.button,
-                                  background: isBusy ? "#85adb0" : "#145b5c",
+                                  background: isBusy || !canCompress ? "#85adb0" : "#145b5c",
                                   color: "#f8f0e3",
                                   opacity:
-                                    isBusy && requestedType !== "compress" ? 0.72 : 1,
+                                    (isBusy && requestedType !== "compress") || !canCompress ? 0.72 : 1,
                                 }}
                               >
-                                {isBusy && requestedType === "compress"
+                                {!canCompress
+                                  ? "Core required"
+                                  : isBusy && requestedType === "compress"
                                   ? "Optimizing..."
                                   : "Optimize image"}
                               </button>
                               <button
                                 type="button"
-                                disabled={isBusy}
+                                disabled={isBusy || !canWatermark}
                                 onClick={() =>
                                   handleClick(currentMediaId, currentImage, "watermark", node.id)
                                 }
                                 style={{
                                   ...styles.button,
-                                  background: isBusy ? "#d9b37d" : "#d18a36",
+                                  background: isBusy || !canWatermark ? "#d9b37d" : "#d18a36",
                                   color: "#fffaf2",
                                   opacity:
-                                    isBusy && requestedType !== "watermark" ? 0.72 : 1,
+                                    (isBusy && requestedType !== "watermark") || !canWatermark ? 0.72 : 1,
                                 }}
                               >
-                                {isBusy && requestedType === "watermark"
+                                {!canWatermark
+                                  ? "Scale required"
+                                  : isBusy && requestedType === "watermark"
                                   ? "Applying..."
                                   : "Apply mark"}
                               </button>

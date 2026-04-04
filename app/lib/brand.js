@@ -37,7 +37,7 @@ export function getAppReturnUrl({ request, shopDomain, path = "/app" }) {
 }
 
 export function isBillingTestMode() {
-  return process.env.NODE_ENV !== "production";
+  return true;
 }
 
 export function getDisplayPlanName(planName) {

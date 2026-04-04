@@ -1,16 +1,19 @@
-import { authenticate, MONTHLY_PLAN, PRO_MONTHLY_PLAN, FREE_PLAN } from "../shopify.server";
+import { authenticate, MONTHLY_PLAN, PRO_MONTHLY_PLAN } from "../shopify.server";
 import { isBillingTestMode } from "../lib/brand";
-import { requireBillingSafely } from "../lib/billing.server";
+import { getBillingStatusOrFree } from "../lib/billing.server";
 
 export const loader = async ({ request }) => {
   const { billing, session, redirect } = await authenticate.admin(request);
-  const billingCheck = await requireBillingSafely({
+  const billingCheck = await getBillingStatusOrFree({
     request,
     billing,
     session,
-    plans: [MONTHLY_PLAN, PRO_MONTHLY_PLAN, FREE_PLAN],
-    onFailure: async () => billing.request({ plan: FREE_PLAN }),
+    plans: [MONTHLY_PLAN, PRO_MONTHLY_PLAN],
   });
+
+  if (!billingCheck.hasActivePayment || billingCheck.appSubscriptions.length === 0) {
+    return redirect("/app");
+  }
 
   const subscription = billingCheck.appSubscriptions[0];
   await billing.cancel({
