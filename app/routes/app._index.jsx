@@ -174,8 +174,8 @@ export default function PricingPage() {
               Choose the version of {BRAND.shortName} that fits your catalog.
             </Text>
             <Text as="p" variant="bodyLg">
-              The refreshed plans page is positioned less like a template checkout and more like a
-              product decision. It keeps the commercial tiers clear while still feeling branded.
+              Compare plans based on the features your team needs for image compression and
+              watermark workflows inside Shopify.
             </Text>
           </BlockStack>
         </Box>

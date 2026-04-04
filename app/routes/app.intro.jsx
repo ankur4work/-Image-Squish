@@ -1,5 +1,4 @@
 import {
-  Badge,
   BlockStack,
   Box,
   Button,
@@ -85,7 +84,9 @@ export default function IntroPage() {
         >
           <BlockStack gap="400">
             <InlineStack align="space-between" blockAlign="center">
-              <Badge tone="attention">New identity</Badge>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Overview
+              </Text>
               <Text as="p" variant="bodySm">
                 Active plan: {activePlan}
               </Text>
@@ -127,15 +128,15 @@ export default function IntroPage() {
           <Card>
             <BlockStack gap="300">
               <Text as="h2" variant="headingLg">
-                Brand direction
+                How it fits into Shopify
               </Text>
               <Text as="p" variant="bodyMd">
-                The refreshed UI leans into a studio-style presentation: warmer tones, editorial
-                copy, and a more premium merchant-facing tone.
+                PixelMint Studio runs inside Shopify admin so merchants can manage image
+                compression and watermarking without leaving their existing workflow.
               </Text>
               <Text as="p" variant="bodyMd">
-                That makes the app feel less like a generic utility and more like a focused product
-                for creative operations.
+                This keeps product media tasks close to the catalog and reduces back-and-forth
+                between separate tools.
               </Text>
             </BlockStack>
           </Card>
