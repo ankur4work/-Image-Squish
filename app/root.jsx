@@ -4,7 +4,9 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useRouteError,
 } from "@remix-run/react";
+import { boundary } from "@shopify/shopify-app-remix/server";
 
 export default function App() {
   return (
@@ -27,4 +29,8 @@ export default function App() {
       </body>
     </html>
   );
+}
+
+export function ErrorBoundary() {
+  return boundary.error(useRouteError());
 }

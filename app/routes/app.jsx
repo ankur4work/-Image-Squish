@@ -62,11 +62,7 @@ export default function App() {
 export function ErrorBoundary() {
   const error = useRouteError();
   console.error("Route error:", error);
-  return (
-    <div style={{ padding: "2rem", textAlign: "center" }}>
-      <Spinner accessibilityLabel="Loading..." size="large" />
-    </div>
-  );
+  return boundary.error(error);
 }
 
 export const headers = (headersArgs) => {

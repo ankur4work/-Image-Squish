@@ -1,6 +1,6 @@
 import { redirect } from "@remix-run/node";
 import { Form, useLoaderData } from "@remix-run/react";
-import { authenticate, login } from "../../shopify.server";
+import { login } from "../../shopify.server";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
@@ -14,8 +14,7 @@ export const loader = async ({ request }) => {
   ].some((param) => url.searchParams.has(param));
 
   if (hasEmbeddedContext) {
-    const { redirect: adminRedirect } = await authenticate.admin(request);
-    return adminRedirect(`/app?${url.searchParams.toString()}`);
+    throw redirect(`/app?${url.searchParams.toString()}`);
   }
 
   if (url.searchParams.get("shop")) {
