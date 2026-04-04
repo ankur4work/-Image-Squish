@@ -5,17 +5,15 @@ import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
   const url = new URL(request.url);
-  const isAdminEntryRequest = [
+  const hasEmbeddedContext = [
     "embedded",
     "host",
     "hmac",
     "id_token",
     "session",
-    "shop",
-    "timestamp",
   ].some((param) => url.searchParams.has(param));
 
-  if (isAdminEntryRequest) {
+  if (hasEmbeddedContext) {
     const { redirect: adminRedirect } = await authenticate.admin(request);
     return adminRedirect(`/app?${url.searchParams.toString()}`);
   }
