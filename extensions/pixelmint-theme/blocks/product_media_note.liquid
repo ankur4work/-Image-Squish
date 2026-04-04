@@ -1,0 +1,100 @@
+{% assign badge = block.settings.badge | strip %}
+{% assign heading = block.settings.heading | strip %}
+{% assign body = block.settings.body | strip %}
+
+<div
+  class="pixelmint-product-media-note"
+  {{ block.shopify_attributes }}
+  style="
+    border: 1px solid {{ block.settings.border_color }};
+    border-radius: 18px;
+    padding: 18px;
+    background: {{ block.settings.background_color }};
+    color: #163a39;
+  "
+>
+  {% if badge != blank %}
+    <p
+      style="
+        margin: 0 0 10px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: {{ block.settings.accent_color }};
+      "
+    >
+      {{ badge | escape }}
+    </p>
+  {% endif %}
+
+  {% if heading != blank %}
+    <h3
+      style="
+        margin: 0 0 8px;
+        font-size: 22px;
+        line-height: 1.2;
+        color: #163a39;
+      "
+    >
+      {{ heading | escape }}
+    </h3>
+  {% endif %}
+
+  {% if body != blank %}
+    <div
+      style="
+        font-size: 15px;
+        line-height: 1.6;
+        color: rgba(22, 58, 57, 0.9);
+      "
+    >
+      {{ body | escape }}
+    </div>
+  {% endif %}
+</div>
+
+{% schema %}
+{
+  "name": "PixelMint media note",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "badge",
+      "label": "Badge",
+      "default": "PixelMint Studio"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Storefront-ready product media"
+    },
+    {
+      "type": "textarea",
+      "id": "body",
+      "label": "Body",
+      "default": "Show customers that this product's visuals were prepared with PixelMint Studio before they reached the storefront."
+    },
+    {
+      "type": "color",
+      "id": "background_color",
+      "label": "Background color",
+      "default": "#F4F8F1"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border color",
+      "default": "#B7D7C6"
+    },
+    {
+      "type": "color",
+      "id": "accent_color",
+      "label": "Accent color",
+      "default": "#176B5B"
+    }
+  ]
+}
+{% endschema %}
