@@ -10,6 +10,10 @@ import { apiVersion, authenticate } from "../shopify.server";
 import { BRAND, getDisplayPlanName } from "../lib/brand";
 import { getBillingStatusOrFree } from "../lib/billing.server";
 
+const OPTIMIZED_ALT = "PixelMint optimized image";
+const WATERMARKED_ALT = "PixelMint watermarked image";
+const WATERMARK_UPLOAD_DIR = path.resolve("public/uploads/watermarks");
+
 const productQuery = `
 {
   products(first: 200) {
@@ -60,6 +64,78 @@ mutation productCreateMedia($media: [CreateMediaInput!]!, $productId: ID!) {
   }
 }`;
 
+function getSavedWatermarkPaths(shop) {
+  const safeShopName = shop.replace(/[^a-z0-9.-]/gi, "_");
+  return {
+    imagePath: path.join(WATERMARK_UPLOAD_DIR, `${safeShopName}.png`),
+    metaPath: path.join(WATERMARK_UPLOAD_DIR, `${safeShopName}.json`),
+    publicPath: `/uploads/watermarks/${safeShopName}.png`,
+  };
+}
+
+function readSavedWatermarkInfo(shop) {
+  const { imagePath, metaPath, publicPath } = getSavedWatermarkPaths(shop);
+
+  if (!fs.existsSync(imagePath)) {
+    return null;
+  }
+
+  let originalName = "Saved watermark.png";
+
+  if (fs.existsSync(metaPath)) {
+    try {
+      const metadata = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+      if (metadata?.originalName) {
+        originalName = metadata.originalName;
+      }
+    } catch {
+      // Fall back to a generic label if metadata is unreadable.
+    }
+  }
+
+  return {
+    name: originalName,
+    publicPath,
+    imagePath,
+    metaPath,
+  };
+}
+
+async function saveShopWatermark({ shop, sourceBuffer, originalName }) {
+  const { imagePath, metaPath } = getSavedWatermarkPaths(shop);
+  fs.mkdirSync(WATERMARK_UPLOAD_DIR, { recursive: true });
+
+  const resizedWatermark = await sharp(sourceBuffer).resize(100).png().toBuffer();
+  await fs.promises.writeFile(imagePath, resizedWatermark);
+  await fs.promises.writeFile(
+    metaPath,
+    JSON.stringify(
+      {
+        originalName,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
+
+  return resizedWatermark;
+}
+
+function getMediaProcessingState(image) {
+  const altText = image?.altText || "";
+
+  if (altText === WATERMARKED_ALT) {
+    return "watermarked";
+  }
+
+  if (altText === OPTIMIZED_ALT) {
+    return "optimized";
+  }
+
+  return "original";
+}
+
 const stagedUploadsCreateMutation = `
 mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
   stagedUploadsCreate(input: $input) {
@@ -81,6 +157,7 @@ mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
 export const loader = async ({ request }) => {
   const { billing, session } = await authenticate.admin(request);
   const { shop, accessToken } = session;
+  const savedWatermark = readSavedWatermarkInfo(shop);
 
   const billingCheck = await getBillingStatusOrFree({
     request,
@@ -103,6 +180,7 @@ export const loader = async ({ request }) => {
       activeDisplayPlan: getDisplayPlanName(activePlan),
       canCompress: activePlan === "Core" || activePlan === "Scale",
       canWatermark: activePlan === "Scale",
+      savedWatermarkName: savedWatermark?.name || null,
     });
   }
 
@@ -125,6 +203,7 @@ export const loader = async ({ request }) => {
     activeDisplayPlan: getDisplayPlanName(activePlan),
     canCompress: activePlan === "Core" || activePlan === "Scale",
     canWatermark: activePlan === "Scale",
+    savedWatermarkName: savedWatermark?.name || null,
   });
 };
 
@@ -196,14 +275,25 @@ export const action = async ({ request }) => {
     } else if (type === "watermark") {
       let watermarkBuffer;
 
-      if (watermarkFile && typeof watermarkFile === "object") {
-        watermarkBuffer = Buffer.from(await watermarkFile.arrayBuffer());
+      if (watermarkFile && typeof watermarkFile === "object" && watermarkFile.size > 0) {
+        const uploadedWatermarkBuffer = Buffer.from(await watermarkFile.arrayBuffer());
+        watermarkBuffer = await saveShopWatermark({
+          shop,
+          sourceBuffer: uploadedWatermarkBuffer,
+          originalName: watermarkFile.name || "Custom watermark.png",
+        });
       } else {
-        const defaultPath = path.resolve("public/watermark.png");
-        if (!fs.existsSync(defaultPath)) {
-          throw new Error("Default watermark missing.");
+        const savedWatermark = readSavedWatermarkInfo(shop);
+
+        if (savedWatermark?.imagePath && fs.existsSync(savedWatermark.imagePath)) {
+          watermarkBuffer = await fs.promises.readFile(savedWatermark.imagePath);
+        } else {
+          const defaultPath = path.resolve("public/watermark.png");
+          if (!fs.existsSync(defaultPath)) {
+            throw new Error("Default watermark missing.");
+          }
+          watermarkBuffer = await sharp(defaultPath).resize(100).png().toBuffer();
         }
-        watermarkBuffer = await sharp(defaultPath).resize(100).png().toBuffer();
       }
 
       processedBuffer = await sharp(imageBuffer)
@@ -645,6 +735,7 @@ export default function StudioPage() {
   const [watermark, setWatermark] = useState(null);
   const [processedImages, setProcessedImages] = useState({});
   const [notification, setNotification] = useState(null);
+  const savedWatermarkName = useLoaderData().savedWatermarkName;
 
   useEffect(() => {
     if (fetcher.state !== "idle" || !fetcher.data) {
@@ -712,8 +803,19 @@ export default function StudioPage() {
     fetcher.submit(formData, { method: "post", encType: "multipart/form-data" });
   };
 
-  const processedCount = Object.keys(processedImages).length;
-  const watermarkState = watermark ? "Custom asset loaded" : "Using fallback mark";
+  const processedProductIds = new Set(
+    products
+      .filter(({ node }) => getMediaProcessingState(node.media.edges[0]?.node?.image) !== "original")
+      .map(({ node }) => node.id),
+  );
+
+  Object.keys(processedImages).forEach((productId) => {
+    processedProductIds.add(productId);
+  });
+
+  const processedCount = processedProductIds.size;
+  const effectiveWatermarkName = watermark?.name || savedWatermarkName;
+  const watermarkState = effectiveWatermarkName ? "Saved custom watermark" : "Using fallback mark";
 
   return (
     <div style={styles.page}>
@@ -789,7 +891,9 @@ export default function StudioPage() {
               </span>
             </label>
 
-            {watermark ? <div style={styles.uploadName}>{watermark.name}</div> : null}
+            {effectiveWatermarkName ? (
+              <div style={styles.uploadName}>{effectiveWatermarkName}</div>
+            ) : null}
 
             <div style={styles.noteList}>
               <div style={styles.noteItem}>Compression outputs a lighter JPG for faster storefront delivery.</div>
@@ -821,6 +925,16 @@ export default function StudioPage() {
                   const currentMediaId = processedData?.mediaId || media?.id;
                   const isBusy = loadingId === currentMediaId;
                   const requestedType = fetcher.submission?.formData.get("type");
+                  const persistedState = getMediaProcessingState(originalImage);
+                  const isProcessed =
+                    Boolean(processedData) || persistedState === "optimized" || persistedState === "watermarked";
+                  const statusLabel = processedData
+                    ? "Updated"
+                    : persistedState === "watermarked"
+                    ? "Watermarked"
+                    : persistedState === "optimized"
+                    ? "Optimized"
+                    : "Original";
 
                   return (
                     <article key={node.id} style={styles.productCard}>
@@ -840,11 +954,11 @@ export default function StudioPage() {
                               <span
                                 style={{
                                   ...styles.statusPill,
-                                  color: processedData ? "#145b5c" : "#8a5b1e",
-                                  background: processedData ? "#e5f3ee" : "#f9ecd9",
+                                  color: isProcessed ? "#145b5c" : "#8a5b1e",
+                                  background: isProcessed ? "#e5f3ee" : "#f9ecd9",
                                 }}
                               >
-                                {processedData ? "Updated" : "Original"}
+                                {statusLabel}
                               </span>
                             </div>
 
@@ -867,6 +981,8 @@ export default function StudioPage() {
                                   ? "Core required"
                                   : isBusy && requestedType === "compress"
                                   ? "Optimizing..."
+                                  : persistedState === "optimized" || persistedState === "watermarked"
+                                  ? "Re-optimize image"
                                   : "Optimize image"}
                               </button>
                               <button
@@ -887,6 +1003,8 @@ export default function StudioPage() {
                                   ? "Scale required"
                                   : isBusy && requestedType === "watermark"
                                   ? "Applying..."
+                                  : persistedState === "watermarked"
+                                  ? "Reapply mark"
                                   : "Apply mark"}
                               </button>
                             </div>
