@@ -1,298 +1,187 @@
 import {
-  Badge,
   BlockStack,
-  Box,
   Button,
   Card,
-  InlineStack,
+  InlineGrid,
+  List,
   Page,
   Text,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
-import { BRAND, getDisplayPlanName } from "../lib/brand";
-import { getBillingStatusOrFree } from "../lib/billing.server";
-import { authenticate, MONTHLY_PLAN, PRO_MONTHLY_PLAN } from "../shopify.server";
+import { authenticate } from "../shopify.server";
+import { BRAND } from "../lib/brand";
 import { PersistentLink } from "./components/PersistentLink";
 
-export async function loader({ request }) {
-  const { billing, session } = await authenticate.admin(request);
+export const loader = async ({ request }) => {
+  await authenticate.admin(request);
+  return json({});
+};
 
-  const billingCheck = await getBillingStatusOrFree({
-    request,
-    billing,
-    session,
-    plans: [MONTHLY_PLAN, PRO_MONTHLY_PLAN],
-  });
+const workflowPoints = [
+  "Compress product images to speed up collection and product pages.",
+  "Apply custom watermarks to protect visuals used outside your store.",
+  "Manage image updates directly inside Shopify admin.",
+];
 
-  let activePlan = { name: "Free" };
-
-  if (billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0) {
-    activePlan = { name: billingCheck.appSubscriptions[0].name };
-  }
-
-  return json({
-    plan: activePlan,
-    shop: session.shop,
-    hasPaidPlan: billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0,
-  });
-}
-
-const planData = [
+const detailCards = [
   {
-    title: "Starter",
-    price: "$0",
-    cadence: "for setup",
-    matches: "Free",
-    action: "Current tier",
-    url: null,
-    accent: "#3f8f6b",
-    surface: "linear-gradient(180deg, #f7fff8 0%, #eef8f0 100%)",
-    pill: "#ccf2d8",
-    summary: "A lightweight starting point for evaluating the workflow inside your store.",
-    features: [
-      "Preview the product-image workflow",
-      "See how the studio fits inside Shopify admin",
-      "Prepare your team before enabling paid automation",
-    ],
+    icon: "1",
+    title: "Connect your catalog",
+    body: "Image Squish pulls in your existing products automatically — no manual uploads needed.",
   },
   {
-    title: "Core",
-    price: "$30",
-    cadence: "per month",
-    matches: "Core",
-    action: "Move to Core",
-    url: "/app/upgrade?plan=monthly",
-    accent: "#145b5c",
-    surface: "linear-gradient(180deg, #f4fbfb 0%, #e7f2f2 100%)",
-    pill: "#cbe9e8",
-    summary: "The everyday plan for merchants who want faster product pages and a cleaner operations loop.",
-    features: [
-      "Image compression inside the embedded app",
-      "Faster media cleanup for active product catalogs",
-      "A practical setup for growing stores",
-    ],
+    icon: "2",
+    title: "Optimize in one click",
+    body: "Compress or watermark any product image directly from the studio workspace.",
   },
   {
-    title: "Scale",
-    price: "$150",
-    cadence: "per month",
-    matches: "Scale",
-    action: "Upgrade to Scale",
-    url: "/app/upgrade?plan=pro_monthly",
-    accent: "#c7781a",
-    surface: "linear-gradient(180deg, #fff9f1 0%, #f9eddb 100%)",
-    pill: "#ffe1b8",
-    summary: "The premium tier for teams that need compression plus visual protection across a larger catalog.",
-    features: [
-      "Everything in Core",
-      "Watermark workflow with custom uploads",
-      "Better fit for brand-led merchandising teams",
-    ],
+    icon: "3",
+    title: "Stay in control",
+    body: "Every change stays inside Shopify admin. No external tools, no broken workflows.",
   },
 ];
 
-const styles = {
-  plansGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-    gap: "20px",
-    alignItems: "stretch",
-  },
-  planCard: {
-    height: "100%",
-    minHeight: "540px",
-    borderRadius: "26px",
-    padding: "28px",
-    border: "1px solid rgba(15, 61, 62, 0.12)",
-    boxShadow: "0 18px 42px rgba(15, 61, 62, 0.08)",
-    display: "flex",
-    flexDirection: "column",
-  },
-  planHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "12px",
-  },
-  summary: {
-    minHeight: "88px",
-    marginTop: "10px",
-  },
-  priceRow: {
-    display: "flex",
-    alignItems: "flex-end",
-    gap: "10px",
-    minHeight: "92px",
-    marginTop: "18px",
-  },
-  features: {
-    display: "grid",
-    gap: "14px",
-    marginTop: "18px",
-    flex: 1,
-    alignContent: "start",
-  },
-  featureItem: {
-    padding: "12px 14px",
-    borderRadius: "16px",
-    background: "rgba(255, 255, 255, 0.65)",
-    fontSize: "15px",
-    lineHeight: 1.45,
-    wordBreak: "break-word",
-  },
-  footer: {
-    marginTop: "24px",
-  },
-};
-
-export default function PricingPage() {
-  const { plan, hasPaidPlan } = useLoaderData();
-  const activePlanName = plan.name;
-  const activeDisplayName = getDisplayPlanName(activePlanName);
-
+export default function OverviewPage() {
   return (
     <Page>
-      <TitleBar title={`${BRAND.name} Plans`} />
+      <TitleBar title={BRAND.name} />
       <BlockStack gap="500">
-        <Box
-          padding="600"
-          borderRadius="300"
+        {/* Hero */}
+        <div
           style={{
-            background: "linear-gradient(135deg, #f3ead8 0%, #fff8ef 48%, #dcefea 100%)",
-            border: "1px solid rgba(15, 61, 62, 0.12)",
+            borderRadius: "16px",
+            padding: "40px 36px",
+            background: "linear-gradient(135deg, #312E81 0%, #4F46E5 50%, #6366F1 100%)",
+            color: "#fff",
           }}
         >
-          <BlockStack gap="300">
-            <InlineStack align="space-between" blockAlign="center">
-              <Badge tone="info">Pricing</Badge>
-              <Text as="p" variant="bodySm">
-                Active tier: {activeDisplayName}
-              </Text>
-            </InlineStack>
-            <Text as="h1" variant="heading2xl">
-              Choose the version of {BRAND.shortName} that fits your catalog.
-            </Text>
-            <Text as="p" variant="bodyLg">
-              Compare plans based on the features your team needs for image compression and
-              watermark workflows inside Shopify.
-            </Text>
-          </BlockStack>
-        </Box>
+          <div>
+            <div
+              style={{
+                display: "inline-block",
+                padding: "4px 12px",
+                borderRadius: "6px",
+                background: "rgba(255,255,255,0.15)",
+                fontSize: "12px",
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                marginBottom: "16px",
+              }}
+            >
+              Overview
+            </div>
 
-        <div style={styles.plansGrid}>
-          {planData.map((planItem) => {
-            const isActive =
-              planItem.matches === activePlanName ||
-              (planItem.matches === "Free" && activePlanName === "Free");
+            <h1
+              style={{
+                margin: "0 0 12px",
+                fontSize: "32px",
+                fontWeight: 700,
+                lineHeight: 1.15,
+                letterSpacing: "-0.02em",
+              }}
+            >
+              Smaller images. Faster pages. Less hassle.
+            </h1>
+            <p
+              style={{
+                margin: "0 0 24px",
+                fontSize: "16px",
+                lineHeight: 1.6,
+                opacity: 0.85,
+                maxWidth: "560px",
+              }}
+            >
+              {BRAND.name} compresses and watermarks your product images right inside
+              Shopify admin — no exports, no extra tools.
+            </p>
 
-            return (
-              <div
-                key={planItem.title}
-                style={{
-                  ...styles.planCard,
-                  background: planItem.surface,
-                  borderColor: isActive ? planItem.accent : "rgba(15, 61, 62, 0.12)",
-                  boxShadow: isActive
-                    ? `0 22px 48px ${planItem.accent}22`
-                    : "0 18px 42px rgba(15, 61, 62, 0.08)",
-                }}
-              >
-                <div style={styles.planHeader}>
-                  <div>
-                    <Text as="h2" variant="headingXl">
-                      {planItem.title}
-                    </Text>
-                    <div style={styles.summary}>
-                      <Text as="p" variant="bodyMd" tone="subdued">
-                        {planItem.summary}
-                      </Text>
-                    </div>
-                  </div>
-                  {isActive ? <Badge tone="success">Active</Badge> : null}
-                </div>
-
-                <div
-                  style={{
-                    display: "inline-flex",
-                    alignSelf: "flex-start",
-                    padding: "8px 12px",
-                    borderRadius: "999px",
-                    background: planItem.pill,
-                    color: planItem.accent,
-                    fontWeight: 700,
-                    fontSize: "12px",
-                    letterSpacing: "0.04em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {planItem.title} Plan
-                </div>
-
-                <div style={styles.priceRow}>
-                  <Text as="p" variant="heading2xl">
-                    {planItem.price}
-                  </Text>
-                  <Text as="p" variant="bodyMd" tone="subdued">
-                    {planItem.cadence}
-                  </Text>
-                </div>
-
-                <div style={styles.features}>
-                  {planItem.features.map((feature) => (
-                    <div
-                      key={feature}
-                      style={{
-                        ...styles.featureItem,
-                        borderLeft: `4px solid ${planItem.accent}`,
-                      }}
-                    >
-                      {feature}
-                    </div>
-                  ))}
-                </div>
-
-                <div style={styles.footer}>
-                  {isActive ? (
-                    <Button fullWidth disabled>
-                      {planItem.action}
-                    </Button>
-                  ) : planItem.url ? (
-                    <PersistentLink to={planItem.url}>
-                      <Button fullWidth variant="primary">
-                        {planItem.action}
-                      </Button>
-                    </PersistentLink>
-                  ) : (
-                    <Button fullWidth disabled>
-                      {planItem.action}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+            <PersistentLink to="/app/html">
+              <Button variant="primary">Open studio</Button>
+            </PersistentLink>
+          </div>
         </div>
 
-        {hasPaidPlan ? (
+        {/* How it works */}
+        <Card>
+          <BlockStack gap="400">
+            <Text as="h2" variant="headingLg">
+              How it works
+            </Text>
+            <InlineGrid columns={{ xs: 1, md: 3 }} gap="400">
+              {detailCards.map((card) => (
+                <div
+                  key={card.title}
+                  style={{
+                    padding: "20px",
+                    borderRadius: "12px",
+                    background: "#F8FAFC",
+                    border: "1px solid #E2E8F0",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "8px",
+                      background: "#EEF2FF",
+                      color: "#4F46E5",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 700,
+                      fontSize: "14px",
+                      marginBottom: "12px",
+                    }}
+                  >
+                    {card.icon}
+                  </div>
+                  <Text as="h3" variant="headingMd">
+                    {card.title}
+                  </Text>
+                  <div style={{ marginTop: "6px" }}>
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      {card.body}
+                    </Text>
+                  </div>
+                </div>
+              ))}
+            </InlineGrid>
+          </BlockStack>
+        </Card>
+
+        {/* Details */}
+        <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
           <Card>
-            <InlineStack align="space-between" blockAlign="center">
-              <BlockStack gap="100">
-                <Text as="h2" variant="headingMd">
-                  Need to step back from a paid tier?
-                </Text>
-                <Text as="p" variant="bodyMd" tone="subdued">
-                  You can cancel your current paid subscription and return to a lighter setup from
-                  the account tools below.
-                </Text>
-              </BlockStack>
-              <PersistentLink to="/app/cancel">
-                <Button tone="critical">Cancel current plan</Button>
-              </PersistentLink>
-            </InlineStack>
+            <BlockStack gap="300">
+              <Text as="h2" variant="headingMd">
+                What you can do
+              </Text>
+              <List type="bullet">
+                {workflowPoints.map((point) => (
+                  <List.Item key={point}>{point}</List.Item>
+                ))}
+              </List>
+            </BlockStack>
           </Card>
-        ) : null}
+
+          <Card>
+            <BlockStack gap="300">
+              <Text as="h2" variant="headingMd">
+                Built for Shopify
+              </Text>
+              <Text as="p" variant="bodyMd">
+                Image Squish runs as an embedded app inside your Shopify admin.
+                Compress and watermark images without leaving your workflow.
+              </Text>
+              <Text as="p" variant="bodyMd">
+                Every change writes back to your product catalog directly — no
+                manual re-uploads.
+              </Text>
+            </BlockStack>
+          </Card>
+        </InlineGrid>
       </BlockStack>
     </Page>
   );

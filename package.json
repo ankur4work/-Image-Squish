@@ -1,5 +1,5 @@
 {
-  "name": "pixelmint-studio",
+  "name": "imagesquish",
   "private": true,
   "scripts": {
     "build": "remix vite:build",

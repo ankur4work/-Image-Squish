@@ -9,15 +9,29 @@ import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prism
 import { restResources } from "@shopify/shopify-api/rest/admin/2025-04";
 import prisma from "./db.server";
 
-export const FREE_PLAN = "Free plan";
-export const MONTHLY_PLAN = "Core";
-export const PRO_MONTHLY_PLAN = "Scale";
 export const apiVersion = "2025-04";
+export const billingEnabled = process.env.BILLING_ENABLED === "true";
+export const PLAN_NAME = process.env.BILLING_PLAN_NAME || "Pro";
+export const PLAN_AMOUNT = Number(process.env.BILLING_AMOUNT) || 5;
 
 function isWebhookRegistrationErrorBypassable(error) {
   const message = String(error?.message || "");
   return message.includes("403") || message.includes("Forbidden");
 }
+
+const billingConfig = billingEnabled
+  ? {
+      [PLAN_NAME]: {
+        lineItems: [
+          {
+            amount: PLAN_AMOUNT,
+            currencyCode: "USD",
+            interval: BillingInterval.Every30Days,
+          },
+        ],
+      },
+    }
+  : undefined;
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -31,33 +45,7 @@ const shopify = shopifyApp({
   restResources,
   isEmbeddedApp: true,
 
-  billing: {
-    [FREE_PLAN]: {
-      amount: 0,
-      currencyCode: "USD",
-      interval: BillingInterval.OneTime, // Free plan treated as one-time for 3 days usage
-      trialDays: 3,
-    },
-    [MONTHLY_PLAN]: {
-      lineItems: [
-        {
-          amount: 30,
-          currencyCode: "USD",
-          interval: BillingInterval.Every30Days,
-        },
-      ],
-      trialDays: 3,
-    },
-    [PRO_MONTHLY_PLAN]: {
-      lineItems: [
-        {
-          amount: 150,
-          currencyCode: "USD",
-          interval: BillingInterval.Every30Days,
-        },
-      ],
-    },
-  },
+  ...(billingConfig ? { billing: billingConfig } : {}),
 
   webhooks: {
     APP_UNINSTALLED: {
@@ -74,7 +62,6 @@ const shopify = shopifyApp({
           console.warn("Webhook registration failed during local auth; continuing without blocking dev.", error);
           return;
         }
-
         throw error;
       }
     },

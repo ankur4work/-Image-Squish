@@ -1,14 +1,19 @@
-import { authenticate, MONTHLY_PLAN, PRO_MONTHLY_PLAN } from "../shopify.server";
-import { isBillingTestMode } from "../lib/brand";
+import { redirect } from "@remix-run/node";
+import { authenticate, PLAN_NAME, billingEnabled } from "../shopify.server";
 import { getBillingStatusOrFree } from "../lib/billing.server";
 
 export const loader = async ({ request }) => {
-  const { billing, session, redirect } = await authenticate.admin(request);
+  if (!billingEnabled) {
+    return redirect("/app");
+  }
+
+  const { billing, session } = await authenticate.admin(request);
+
   const billingCheck = await getBillingStatusOrFree({
     request,
     billing,
     session,
-    plans: [MONTHLY_PLAN, PRO_MONTHLY_PLAN],
+    plans: [PLAN_NAME],
   });
 
   if (!billingCheck.hasActivePayment || billingCheck.appSubscriptions.length === 0) {
@@ -18,7 +23,7 @@ export const loader = async ({ request }) => {
   const subscription = billingCheck.appSubscriptions[0];
   await billing.cancel({
     subscriptionId: subscription.id,
-    isTest: isBillingTestMode(),
+    isTest: process.env.BILLING_TEST === "true",
     prorate: true,
   });
 

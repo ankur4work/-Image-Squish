@@ -1,8 +1,9 @@
 api_version = "2026-07"
+uid = "f6662c3c-fcc0-8fc0-2758-0447d18e7f7d49ef2376"
 
 [[extensions]]
-name = "PixelMint Theme"
-handle = "pixelmint-theme"
+name = "Image Squish Theme"
+handle = "imagesquish-theme"
 type = "theme"
 
   [[extensions.blocks]]

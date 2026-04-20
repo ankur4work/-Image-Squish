@@ -6,12 +6,12 @@ import sharp from "sharp";
 import FormData from "form-data";
 import path from "path";
 import fs from "fs";
-import { apiVersion, authenticate } from "../shopify.server";
-import { BRAND, getDisplayPlanName } from "../lib/brand";
+import { apiVersion, authenticate, billingEnabled, PLAN_NAME } from "../shopify.server";
+import { BRAND } from "../lib/brand";
 import { getBillingStatusOrFree } from "../lib/billing.server";
 
-const OPTIMIZED_ALT = "PixelMint optimized image";
-const WATERMARKED_ALT = "PixelMint watermarked image";
+const OPTIMIZED_ALT = "Image Squish optimized image";
+const WATERMARKED_ALT = "Image Squish watermarked image";
 const WATERMARK_UPLOAD_DIR = path.resolve("public/uploads/watermarks");
 
 const productQuery = `
@@ -159,27 +159,23 @@ export const loader = async ({ request }) => {
   const { shop, accessToken } = session;
   const savedWatermark = readSavedWatermarkInfo(shop);
 
-  const billingCheck = await getBillingStatusOrFree({
-    request,
-    billing,
-    session,
-    plans: ["Core", "Scale"],
-  });
+  let hasPaidPlan = true;
 
-  let activePlan = "Free";
-
-  if (billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0) {
-    activePlan = billingCheck.appSubscriptions[0].name;
+  if (billingEnabled) {
+    const billingCheck = await getBillingStatusOrFree({
+      request,
+      billing,
+      session,
+      plans: [PLAN_NAME],
+    });
+    hasPaidPlan = billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0;
   }
 
   if (!accessToken) {
     return json({
       products: [],
       shop,
-      activePlan,
-      activeDisplayPlan: getDisplayPlanName(activePlan),
-      canCompress: activePlan === "Core" || activePlan === "Scale",
-      canWatermark: activePlan === "Scale",
+      hasPaidPlan,
       savedWatermarkName: savedWatermark?.name || null,
     });
   }
@@ -199,10 +195,8 @@ export const loader = async ({ request }) => {
   return json({
     products,
     shop,
-    activePlan,
-    activeDisplayPlan: getDisplayPlanName(activePlan),
-    canCompress: activePlan === "Core" || activePlan === "Scale",
-    canWatermark: activePlan === "Scale",
+    canCompress,
+    canWatermark,
     savedWatermarkName: savedWatermark?.name || null,
   });
 };
@@ -220,37 +214,19 @@ export const action = async ({ request }) => {
       throw new Error("Missing required fields.");
     }
 
-    const billingCheck = await getBillingStatusOrFree({
-      request,
-      billing,
-      session,
-      plans: ["Core", "Scale"],
-    });
+    if (billingEnabled) {
+      const billingCheck = await getBillingStatusOrFree({
+        request,
+        billing,
+        session,
+        plans: [PLAN_NAME],
+      });
 
-    let activePlan = "Free";
+      const hasPaid = billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0;
 
-    if (billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0) {
-      activePlan = billingCheck.appSubscriptions[0].name;
-    }
-
-    if (type === "compress" && activePlan !== "Core" && activePlan !== "Scale") {
-      return json(
-        {
-          success: false,
-          message: "Image optimization is available on the Core and Scale plans.",
-        },
-        { status: 403 },
-      );
-    }
-
-    if (type === "watermark" && activePlan !== "Scale") {
-      return json(
-        {
-          success: false,
-          message: "Watermarking is available on the Scale plan.",
-        },
-        { status: 403 },
-      );
+      if (!hasPaid) {
+        return json({ success: false, message: `Subscribe to the ${PLAN_NAME} plan to use this feature.` }, { status: 403 });
+      }
     }
 
     const { shop, accessToken } = session;
@@ -307,7 +283,7 @@ export const action = async ({ request }) => {
     }
 
     const processedSizeKB = (processedBuffer.length / 1024).toFixed(2);
-    const filename = `pixelmint-${Date.now()}.${fileExtension}`;
+    const filename = `imagesquish-${Date.now()}.${fileExtension}`;
 
     const stagedUploadResponse = await fetch(
       `https://${shop}/admin/api/${apiVersion}/graphql.json`,
@@ -357,13 +333,19 @@ export const action = async ({ request }) => {
       contentType: mimeType,
     });
 
+    const uploadBody = uploadFormData.getBuffer();
+    const uploadHeaders = uploadFormData.getHeaders();
+    uploadHeaders["content-length"] = uploadBody.length;
+
     const cdnUploadResponse = await fetch(stagedTarget.url, {
       method: "POST",
-      body: uploadFormData,
-      headers: uploadFormData.getHeaders(),
+      body: uploadBody,
+      headers: uploadHeaders,
     });
 
     if (!cdnUploadResponse.ok) {
+      const cdnBody = await cdnUploadResponse.text();
+      console.error("CDN upload error:", cdnUploadResponse.status, cdnBody);
       throw new Error(`CDN upload failed with status ${cdnUploadResponse.status}.`);
     }
 
@@ -402,7 +384,7 @@ export const action = async ({ request }) => {
             {
               originalSource: stagedTarget.resourceUrl,
               mediaContentType: "IMAGE",
-              alt: type === "compress" ? "PixelMint optimized image" : "PixelMint watermarked image",
+              alt: type === "compress" ? "Image Squish optimized image" : "Image Squish watermarked image",
             },
           ],
         },
@@ -441,183 +423,180 @@ export const action = async ({ request }) => {
   }
 };
 
+/* ── Styles ── */
+
 const styles = {
   page: {
     minHeight: "100vh",
-    padding: "32px",
-    background:
-      "radial-gradient(circle at top left, rgba(226, 161, 70, 0.16), transparent 22%), radial-gradient(circle at top right, rgba(20, 91, 92, 0.16), transparent 24%), linear-gradient(180deg, #fbf6ee 0%, #f5efe4 42%, #edf5f1 100%)",
-    fontFamily: "'Trebuchet MS', 'Avenir Next', sans-serif",
-    color: "#163233",
+    padding: "24px",
+    background: "#F8FAFC",
+    fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    color: "#1E293B",
   },
   shell: {
-    maxWidth: "1440px",
+    maxWidth: "1280px",
     margin: "0 auto",
   },
   hero: {
-    borderRadius: "28px",
-    padding: "36px",
-    background: "linear-gradient(135deg, #0f3d3e 0%, #145b5c 55%, #d18a36 100%)",
-    color: "#f8f0e3",
-    boxShadow: "0 28px 60px rgba(15, 61, 62, 0.22)",
+    borderRadius: "16px",
+    padding: "32px",
+    background: "linear-gradient(135deg, #312E81 0%, #4F46E5 50%, #6366F1 100%)",
+    color: "#fff",
   },
   heroGrid: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1.5fr) minmax(280px, 0.9fr)",
-    gap: "28px",
-    alignItems: "stretch",
+    gridTemplateColumns: "1fr auto",
+    gap: "24px",
+    alignItems: "center",
   },
   badge: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "8px",
-    borderRadius: "999px",
-    padding: "8px 14px",
-    fontSize: "12px",
+    display: "inline-block",
+    borderRadius: "6px",
+    padding: "4px 10px",
+    fontSize: "11px",
     fontWeight: 700,
-    letterSpacing: "0.08em",
+    letterSpacing: "0.04em",
     textTransform: "uppercase",
-    background: "rgba(255, 255, 255, 0.14)",
-    color: "#f8f0e3",
+    background: "rgba(255,255,255,0.15)",
+    marginBottom: "12px",
   },
   heroTitle: {
-    margin: "0 0 12px",
-    fontSize: "clamp(32px, 5vw, 52px)",
-    lineHeight: 1.02,
-    letterSpacing: "-0.04em",
+    margin: "0 0 8px",
+    fontSize: "28px",
+    fontWeight: 700,
+    lineHeight: 1.2,
+    letterSpacing: "-0.02em",
   },
   heroBody: {
     margin: 0,
-    maxWidth: "720px",
-    fontSize: "17px",
+    fontSize: "15px",
     lineHeight: 1.6,
-    color: "rgba(248, 240, 227, 0.86)",
+    opacity: 0.85,
+    maxWidth: "520px",
   },
-  heroStats: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: "14px",
-    marginTop: "28px",
+  statsRow: {
+    display: "flex",
+    gap: "12px",
+    marginTop: "20px",
   },
-  statCard: {
-    padding: "16px",
-    borderRadius: "18px",
-    background: "rgba(255, 255, 255, 0.12)",
-    border: "1px solid rgba(255, 255, 255, 0.12)",
+  stat: {
+    padding: "12px 16px",
+    borderRadius: "10px",
+    background: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    minWidth: "120px",
   },
   statNumber: {
     margin: 0,
-    fontSize: "26px",
+    fontSize: "22px",
     fontWeight: 700,
-    color: "#fff7ee",
   },
   statLabel: {
-    margin: "6px 0 0",
-    fontSize: "13px",
-    color: "rgba(248, 240, 227, 0.78)",
+    margin: "4px 0 0",
+    fontSize: "12px",
+    opacity: 0.7,
   },
   sidePanel: {
-    borderRadius: "24px",
-    padding: "24px",
-    background: "rgba(255, 255, 255, 0.14)",
-    border: "1px solid rgba(255, 255, 255, 0.14)",
+    borderRadius: "12px",
+    padding: "20px",
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.12)",
     display: "flex",
     flexDirection: "column",
-    justifyContent: "space-between",
-    gap: "18px",
+    gap: "16px",
+    minWidth: "220px",
   },
   sideLabel: {
     margin: 0,
-    fontSize: "12px",
-    fontWeight: 700,
-    letterSpacing: "0.08em",
+    fontSize: "11px",
+    fontWeight: 600,
+    letterSpacing: "0.04em",
     textTransform: "uppercase",
-    color: "rgba(248, 240, 227, 0.7)",
+    opacity: 0.6,
   },
   sideValue: {
-    margin: "8px 0 0",
-    fontSize: "28px",
-    lineHeight: 1.1,
-    color: "#fff7ee",
+    margin: "4px 0 0",
+    fontSize: "16px",
+    fontWeight: 600,
   },
-  sectionGrid: {
+  contentGrid: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 340px) minmax(0, 1fr)",
-    gap: "24px",
-    marginTop: "28px",
+    gridTemplateColumns: "280px 1fr",
+    gap: "20px",
+    marginTop: "20px",
   },
-  panel: {
-    borderRadius: "24px",
-    padding: "24px",
-    background: "rgba(255, 252, 247, 0.9)",
-    border: "1px solid rgba(20, 91, 92, 0.08)",
-    boxShadow: "0 20px 50px rgba(20, 91, 92, 0.08)",
+  sidebar: {
+    borderRadius: "14px",
+    padding: "20px",
+    background: "#fff",
+    border: "1px solid #E2E8F0",
   },
-  panelTitle: {
+  sidebarTitle: {
     margin: 0,
-    fontSize: "22px",
-    lineHeight: 1.15,
-    color: "#163233",
+    fontSize: "16px",
+    fontWeight: 600,
+    color: "#1E293B",
   },
-  panelBody: {
-    margin: "10px 0 0",
-    fontSize: "14px",
+  sidebarBody: {
+    margin: "8px 0 0",
+    fontSize: "13px",
     lineHeight: 1.6,
-    color: "#4d6666",
+    color: "#64748B",
   },
   uploadField: {
-    marginTop: "22px",
-    padding: "20px",
-    borderRadius: "18px",
-    border: "1.5px dashed rgba(20, 91, 92, 0.22)",
-    background: "#f7f1e7",
+    marginTop: "16px",
+    padding: "16px",
+    borderRadius: "10px",
+    border: "1.5px dashed #CBD5E1",
+    background: "#F8FAFC",
     cursor: "pointer",
     display: "block",
+    transition: "border-color 150ms ease",
   },
   uploadName: {
-    marginTop: "14px",
-    padding: "12px 14px",
-    borderRadius: "14px",
-    background: "#e9f4ef",
-    color: "#145b5c",
-    fontSize: "14px",
+    marginTop: "10px",
+    padding: "8px 12px",
+    borderRadius: "8px",
+    background: "#EEF2FF",
+    color: "#4F46E5",
+    fontSize: "13px",
     fontWeight: 600,
   },
   noteList: {
-    display: "grid",
-    gap: "12px",
-    marginTop: "18px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    marginTop: "16px",
   },
   noteItem: {
-    padding: "14px 16px",
-    borderRadius: "16px",
-    background: "#fff8ef",
-    border: "1px solid rgba(209, 138, 54, 0.14)",
-    fontSize: "14px",
-    lineHeight: 1.55,
-    color: "#5a5750",
+    padding: "10px 12px",
+    borderRadius: "8px",
+    background: "#F8FAFC",
+    border: "1px solid #E2E8F0",
+    fontSize: "13px",
+    lineHeight: 1.5,
+    color: "#64748B",
   },
   banner: {
-    marginBottom: "20px",
-    borderRadius: "20px",
-    padding: "18px 20px",
-    boxShadow: "0 18px 44px rgba(15, 61, 62, 0.12)",
+    marginBottom: "16px",
+    borderRadius: "10px",
+    padding: "14px 16px",
   },
   productGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-    gap: "20px",
+    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+    gap: "16px",
   },
   productCard: {
     overflow: "hidden",
-    borderRadius: "22px",
-    background: "#fffdf9",
-    border: "1px solid rgba(20, 91, 92, 0.08)",
-    boxShadow: "0 20px 44px rgba(22, 50, 51, 0.08)",
+    borderRadius: "12px",
+    background: "#fff",
+    border: "1px solid #E2E8F0",
+    transition: "box-shadow 150ms ease",
   },
   mediaFrame: {
-    height: "240px",
-    background: "linear-gradient(180deg, #f1ebdf 0%, #ece8e0 100%)",
+    height: "220px",
+    background: "#F1F5F9",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -627,60 +606,60 @@ const styles = {
     maxWidth: "100%",
     maxHeight: "100%",
     objectFit: "contain",
-    borderRadius: "14px",
+    borderRadius: "8px",
   },
   cardBody: {
-    padding: "20px",
+    padding: "16px",
   },
   cardTopRow: {
     display: "flex",
     justifyContent: "space-between",
-    gap: "12px",
-    alignItems: "flex-start",
+    gap: "10px",
+    alignItems: "center",
   },
   productTitle: {
     margin: 0,
-    fontSize: "18px",
-    lineHeight: 1.2,
-    color: "#163233",
+    fontSize: "15px",
+    fontWeight: 600,
+    lineHeight: 1.3,
+    color: "#1E293B",
   },
   statusPill: {
     flexShrink: 0,
-    borderRadius: "999px",
-    padding: "8px 12px",
-    fontSize: "12px",
-    fontWeight: 700,
-    letterSpacing: "0.04em",
+    borderRadius: "6px",
+    padding: "4px 10px",
+    fontSize: "11px",
+    fontWeight: 600,
+    letterSpacing: "0.02em",
     textTransform: "uppercase",
   },
   actionRow: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: "10px",
-    marginTop: "18px",
+    gap: "8px",
+    marginTop: "12px",
   },
   button: {
     border: "none",
-    borderRadius: "14px",
-    padding: "13px 14px",
-    fontSize: "14px",
-    fontWeight: 700,
+    borderRadius: "8px",
+    padding: "10px 12px",
+    fontSize: "13px",
+    fontWeight: 600,
     cursor: "pointer",
-    transition: "transform 140ms ease, opacity 140ms ease",
+    transition: "opacity 150ms ease",
   },
   emptyState: {
-    borderRadius: "24px",
+    borderRadius: "14px",
     padding: "48px",
     textAlign: "center",
-    background: "#fffaf2",
-    border: "1px solid rgba(20, 91, 92, 0.08)",
-    color: "#5a5750",
+    background: "#fff",
+    border: "1px solid #E2E8F0",
   },
 };
 
 function SummaryStat({ number, label }) {
   return (
-    <div style={styles.statCard}>
+    <div style={styles.stat}>
       <p style={styles.statNumber}>{number}</p>
       <p style={styles.statLabel}>{label}</p>
     </div>
@@ -698,38 +677,31 @@ function NotificationBanner({ notification }) {
     <div
       style={{
         ...styles.banner,
-        background: isSuccess
-          ? "linear-gradient(135deg, #dff3ea 0%, #edf8f1 100%)"
-          : "linear-gradient(135deg, #fde5e0 0%, #fff0ed 100%)",
-        border: isSuccess
-          ? "1px solid rgba(20, 91, 92, 0.12)"
-          : "1px solid rgba(167, 58, 40, 0.14)",
+        background: isSuccess ? "#F0FDF4" : "#FEF2F2",
+        border: isSuccess ? "1px solid #BBF7D0" : "1px solid #FECACA",
       }}
     >
-      <div style={{ display: "grid", gap: "8px" }}>
-        <p
-          style={{
-            margin: 0,
-            fontSize: "15px",
-            fontWeight: 700,
-            color: isSuccess ? "#145b5c" : "#9a3e30",
-          }}
-        >
-          {notification.message}
+      <p
+        style={{
+          margin: 0,
+          fontSize: "14px",
+          fontWeight: 600,
+          color: isSuccess ? "#166534" : "#991B1B",
+        }}
+      >
+        {notification.message}
+      </p>
+      {notification.details ? (
+        <p style={{ margin: "4px 0 0", fontSize: "13px", color: isSuccess ? "#15803D" : "#B91C1C" }}>
+          {notification.details.original} KB &rarr; {notification.details.processed} KB ({notification.details.savings}% saved)
         </p>
-        {notification.details ? (
-          <p style={{ margin: 0, fontSize: "14px", color: "#5b6768" }}>
-            Before {notification.details.original} KB, after {notification.details.processed} KB, savings{" "}
-            {notification.details.savings}%.
-          </p>
-        ) : null}
-      </div>
+      ) : null}
     </div>
   );
 }
 
 export default function StudioPage() {
-  const { products, shop, activeDisplayPlan, canCompress, canWatermark } = useLoaderData();
+  const { products, shop, hasPaidPlan } = useLoaderData();
   const fetcher = useFetcher();
   const [loadingId, setLoadingId] = useState(null);
   const [watermark, setWatermark] = useState(null);
@@ -815,64 +787,56 @@ export default function StudioPage() {
 
   const processedCount = processedProductIds.size;
   const effectiveWatermarkName = watermark?.name || savedWatermarkName;
-  const watermarkState = effectiveWatermarkName ? "Saved custom watermark" : "Using fallback mark";
 
   return (
     <div style={styles.page}>
       <TitleBar title={`${BRAND.shortName} Studio`} />
       <div style={styles.shell}>
+        {/* Hero */}
         <section style={styles.hero}>
           <div style={styles.heroGrid}>
             <div>
-              <div style={styles.badge}>Premium image workflow</div>
-              <h1 style={styles.heroTitle}>A sharper editing surface for product media.</h1>
+              <div style={styles.badge}>Studio</div>
+              <h1 style={styles.heroTitle}>Optimize your product images.</h1>
               <p style={styles.heroBody}>
-                {BRAND.name} gives merchants a single workspace for image optimization and
-                watermarking inside Shopify admin.
+                Compress for faster pages or add watermarks for brand protection — all from one workspace.
               </p>
 
-              <div style={styles.heroStats}>
-                <SummaryStat number={products.length} label="Catalog items loaded" />
-                <SummaryStat number={processedCount} label="Updated this session" />
-                <SummaryStat number={activeDisplayPlan} label="Current plan" />
+              <div style={styles.statsRow}>
+                <SummaryStat number={products.length} label="Products" />
+                <SummaryStat number={processedCount} label="Processed" />
               </div>
             </div>
 
             <div style={styles.sidePanel}>
               <div>
-                <p style={styles.sideLabel}>Workspace</p>
-                <p style={styles.sideValue}>{BRAND.shortName} Studio</p>
+                <p style={styles.sideLabel}>Watermark</p>
+                <p style={styles.sideValue}>
+                  {effectiveWatermarkName ? "Custom uploaded" : "Default"}
+                </p>
               </div>
               <div>
-                <p style={styles.sideLabel}>Current mode</p>
-                <p style={{ ...styles.sideValue, fontSize: "22px" }}>{watermarkState}</p>
+                <p style={styles.sideLabel}>Compression</p>
+                <p style={styles.sideValue}>JPEG @ 50%</p>
               </div>
               <div>
-                <p style={styles.sideLabel}>Use case</p>
-                <p style={{ margin: "8px 0 0", fontSize: "14px", lineHeight: 1.6 }}>
-                  Compress large assets for faster storefront delivery, then add a watermark when the
-                  imagery needs light protection outside Shopify.
+                <p style={styles.sideLabel}>Output</p>
+                <p style={{ ...styles.sideValue, fontSize: "13px", fontWeight: 400, opacity: 0.8 }}>
+                  Replaces the original media on each product.
                 </p>
               </div>
             </div>
           </div>
         </section>
 
-        <div style={styles.sectionGrid}>
-          <aside style={styles.panel}>
-            <h2 style={styles.panelTitle}>Watermark source</h2>
-            <p style={styles.panelBody}>
-              Upload a PNG or image file to apply your own mark. If you skip this step, the app falls back
-              to the default watermark asset in the project.
+        {/* Content */}
+        <div style={styles.contentGrid}>
+          {/* Sidebar */}
+          <aside style={styles.sidebar}>
+            <h2 style={styles.sidebarTitle}>Watermark</h2>
+            <p style={styles.sidebarBody}>
+              Upload a PNG to use as your watermark. Without one, the default mark is used.
             </p>
-
-            {!canCompress || !canWatermark ? (
-              <div style={{ ...styles.noteItem, marginTop: "18px" }}>
-                {canCompress
-                  ? "Watermarking unlocks on the Scale plan."
-                  : "Starter includes a studio preview. Upgrade to Core for optimization or Scale for watermarking."}
-              </div>
-            ) : null}
 
             <input
               id="watermark-upload"
@@ -883,11 +847,11 @@ export default function StudioPage() {
             />
 
             <label htmlFor="watermark-upload" style={styles.uploadField}>
-              <strong style={{ display: "block", marginBottom: "6px", color: "#163233" }}>
-                Upload custom watermark
+              <strong style={{ display: "block", marginBottom: "4px", color: "#1E293B", fontSize: "13px" }}>
+                Upload watermark
               </strong>
-              <span style={{ fontSize: "14px", color: "#5a5750" }}>
-                Choose an image that should sit in the corner of processed media.
+              <span style={{ fontSize: "12px", color: "#64748B" }}>
+                PNG recommended, placed at top-left corner.
               </span>
             </label>
 
@@ -896,23 +860,23 @@ export default function StudioPage() {
             ) : null}
 
             <div style={styles.noteList}>
-              <div style={styles.noteItem}>Compression outputs a lighter JPG for faster storefront delivery.</div>
-              <div style={styles.noteItem}>Watermarking outputs a PNG and keeps the new image attached to the product.</div>
-              <div style={styles.noteItem}>Every update replaces the old media entry, so the catalog stays tidy.</div>
+              <div style={styles.noteItem}>Compress outputs a lighter JPG for faster loading.</div>
+              <div style={styles.noteItem}>Watermark outputs a PNG with your mark applied.</div>
+              <div style={styles.noteItem}>Each update replaces the old media automatically.</div>
             </div>
           </aside>
 
+          {/* Product grid */}
           <section>
             <NotificationBanner notification={notification} />
 
             {products.length === 0 ? (
               <div style={styles.emptyState}>
-                <h2 style={{ margin: "0 0 10px", fontSize: "26px", color: "#163233" }}>
-                  No products are available yet.
+                <h2 style={{ margin: "0 0 8px", fontSize: "20px", fontWeight: 600, color: "#1E293B" }}>
+                  No products found.
                 </h2>
-                <p style={{ margin: 0, fontSize: "15px", lineHeight: 1.6 }}>
-                  Once the store has product media, PixelMint Studio will surface those items here for
-                  compression and watermarking.
+                <p style={{ margin: 0, fontSize: "14px", color: "#64748B", lineHeight: 1.6 }}>
+                  Add products with images to your store, then come back here to optimize them.
                 </p>
               </div>
             ) : (
@@ -954,8 +918,8 @@ export default function StudioPage() {
                               <span
                                 style={{
                                   ...styles.statusPill,
-                                  color: isProcessed ? "#145b5c" : "#8a5b1e",
-                                  background: isProcessed ? "#e5f3ee" : "#f9ecd9",
+                                  color: isProcessed ? "#4F46E5" : "#64748B",
+                                  background: isProcessed ? "#EEF2FF" : "#F1F5F9",
                                 }}
                               >
                                 {statusLabel}
@@ -965,57 +929,54 @@ export default function StudioPage() {
                             <div style={styles.actionRow}>
                               <button
                                 type="button"
-                                disabled={isBusy || !canCompress}
+                                disabled={isBusy || !hasPaidPlan}
                                 onClick={() =>
                                   handleClick(currentMediaId, currentImage, "compress", node.id)
                                 }
                                 style={{
                                   ...styles.button,
-                                  background: isBusy || !canCompress ? "#85adb0" : "#145b5c",
-                                  color: "#f8f0e3",
-                                  opacity:
-                                    (isBusy && requestedType !== "compress") || !canCompress ? 0.72 : 1,
+                                  background: isBusy || !hasPaidPlan ? "#94A3B8" : "#4F46E5",
+                                  color: "#fff",
+                                  opacity: (isBusy && requestedType !== "compress") || !hasPaidPlan ? 0.6 : 1,
                                 }}
                               >
-                                {!canCompress
-                                  ? "Core required"
+                                {!hasPaidPlan
+                                  ? "Upgrade"
                                   : isBusy && requestedType === "compress"
-                                  ? "Optimizing..."
+                                  ? "Compressing..."
                                   : persistedState === "optimized" || persistedState === "watermarked"
-                                  ? "Re-optimize image"
-                                  : "Optimize image"}
+                                  ? "Re-compress"
+                                  : "Compress"}
                               </button>
                               <button
                                 type="button"
-                                disabled={isBusy || !canWatermark}
+                                disabled={isBusy || !hasPaidPlan}
                                 onClick={() =>
                                   handleClick(currentMediaId, currentImage, "watermark", node.id)
                                 }
                                 style={{
                                   ...styles.button,
-                                  background: isBusy || !canWatermark ? "#d9b37d" : "#d18a36",
-                                  color: "#fffaf2",
-                                  opacity:
-                                    (isBusy && requestedType !== "watermark") || !canWatermark ? 0.72 : 1,
+                                  background: isBusy || !hasPaidPlan ? "#94A3B8" : "#1E293B",
+                                  color: "#fff",
+                                  opacity: (isBusy && requestedType !== "watermark") || !hasPaidPlan ? 0.6 : 1,
                                 }}
                               >
-                                {!canWatermark
-                                  ? "Scale required"
+                                {!hasPaidPlan
+                                  ? "Upgrade"
                                   : isBusy && requestedType === "watermark"
                                   ? "Applying..."
                                   : persistedState === "watermarked"
-                                  ? "Reapply mark"
-                                  : "Apply mark"}
+                                  ? "Re-watermark"
+                                  : "Watermark"}
                               </button>
                             </div>
                           </div>
                         </>
                       ) : (
-                        <div style={{ ...styles.cardBody, padding: "44px 24px" }}>
-                          <h3 style={{ ...styles.productTitle, marginBottom: "10px" }}>{node.title}</h3>
-                          <p style={{ margin: 0, fontSize: "14px", color: "#5a5750", lineHeight: 1.6 }}>
-                            This product does not have a primary image yet, so there is nothing to process in
-                            the studio.
+                        <div style={{ ...styles.cardBody, padding: "32px 20px" }}>
+                          <h3 style={{ ...styles.productTitle, marginBottom: "6px" }}>{node.title}</h3>
+                          <p style={{ margin: 0, fontSize: "13px", color: "#64748B", lineHeight: 1.5 }}>
+                            No image attached to this product yet.
                           </p>
                         </div>
                       )}

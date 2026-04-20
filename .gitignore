@@ -16,5 +16,7 @@ tmp-npm-inspect-remix/
 cloudflared-linux-amd64.deb
 prisma/dev.sqlite
 
+public/uploads/watermarks/
+
 .DS_Store
 Thumbs.db

@@ -29,19 +29,6 @@ export async function refreshBillingSessionIfNeeded({ request, session, error })
   throw redirect(url.toString());
 }
 
-export async function requireBillingSafely({ request, billing, session, plans, onFailure }) {
-  try {
-    return await billing.require({ plans, onFailure });
-  } catch (error) {
-    if (error instanceof Response) {
-      throw error;
-    }
-
-    await refreshBillingSessionIfNeeded({ request, session, error });
-    throw error;
-  }
-}
-
 export async function requestBillingSafely({
   request,
   billing,
@@ -73,7 +60,7 @@ export async function getBillingStatusOrFree({ request, billing, session, plans 
     await refreshBillingSessionIfNeeded({ request, session, error });
 
     if (isBillingStatusFallbackError(error)) {
-      console.warn("Billing status check failed; treating store as free until a real billing action is attempted.", error);
+      console.warn("Billing status check failed; treating store as free.", error);
       return {
         hasActivePayment: false,
         oneTimePurchases: [],

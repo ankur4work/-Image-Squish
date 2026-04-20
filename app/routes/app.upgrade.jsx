@@ -1,30 +1,21 @@
-import { authenticate, MONTHLY_PLAN, PRO_MONTHLY_PLAN } from "../shopify.server";
-import { getAppReturnUrl, isBillingTestMode } from "../lib/brand";
-import { requestBillingSafely } from "../lib/billing.server";
+import { redirect } from "@remix-run/node";
+import { authenticate, PLAN_NAME, billingEnabled } from "../shopify.server";
 
 export const loader = async ({ request }) => {
+  if (!billingEnabled) {
+    return redirect("/app");
+  }
+
   const { billing, session } = await authenticate.admin(request);
-  const { shop } = session;
 
   const url = new URL(request.url);
-  const selectedPlan = url.searchParams.get("plan");
+  const host = url.searchParams.get("host") || "";
+  const appUrl = (process.env.SHOPIFY_APP_URL || "").replace(/\/$/, "");
+  const returnUrl = `${appUrl}/app?shop=${session.shop}&host=${host}`;
 
-  let planToUse = MONTHLY_PLAN;
-  if (selectedPlan === "pro_monthly") {
-    planToUse = PRO_MONTHLY_PLAN;
-  }
-
-  try {
-    await requestBillingSafely({
-      request,
-      billing,
-      session,
-      plan: planToUse,
-      isTest: isBillingTestMode(),
-      returnUrl: getAppReturnUrl({ request, shopDomain: shop }),
-    });
-  } catch (error) {
-    console.error("Upgrade error:", error);
-    throw error;
-  }
+  await billing.request({
+    plan: PLAN_NAME,
+    isTest: process.env.BILLING_TEST === "true",
+    returnUrl,
+  });
 };
