@@ -2,7 +2,7 @@
 
 client_id = "cadb7064542459dab66c49cdfde8be5a"
 name = "Image Squish"
-application_url = "https://example.com"
+application_url = "https://imagesquish.solnix.store"
 embedded = true
 handle = "imagesquish"
 
@@ -20,7 +20,7 @@ optional_scopes = [ ]
 use_legacy_install_flow = false
 
 [auth]
-redirect_urls = [ ]
+redirect_urls = [ "https://imagesquish.solnix.store/auth/callback" ]
 
 [build]
 automatically_update_urls_on_dev = true

@@ -195,8 +195,7 @@ export const loader = async ({ request }) => {
   return json({
     products,
     shop,
-    canCompress,
-    canWatermark,
+    hasPaidPlan,
     savedWatermarkName: savedWatermark?.name || null,
   });
 };
