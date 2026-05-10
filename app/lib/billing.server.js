@@ -1,5 +1,5 @@
 import { redirect } from "@remix-run/node";
-import { sessionStorage } from "../shopify.server";
+import { sessionStorage, BILLING_TEST } from "../shopify.server";
 
 function isBillingStatusFallbackError(error) {
   const message = String(error?.message || "");
@@ -55,7 +55,7 @@ export async function requestBillingSafely({
 
 export async function getBillingStatusOrFree({ request, billing, session, plans }) {
   try {
-    return await billing.check({ plans });
+    return await billing.check({ plans, isTest: BILLING_TEST });
   } catch (error) {
     await refreshBillingSessionIfNeeded({ request, session, error });
 

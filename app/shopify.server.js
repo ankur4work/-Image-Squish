@@ -13,6 +13,7 @@ export const apiVersion = "2025-04";
 export const billingEnabled = process.env.BILLING_ENABLED === "true";
 export const PLAN_NAME = process.env.BILLING_PLAN_NAME || "Pro";
 export const PLAN_AMOUNT = Number(process.env.BILLING_AMOUNT) || 5;
+export const BILLING_TEST = process.env.BILLING_TEST === "true";
 
 function isWebhookRegistrationErrorBypassable(error) {
   const message = String(error?.message || "");
