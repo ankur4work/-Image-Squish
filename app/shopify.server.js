@@ -13,6 +13,7 @@ export const apiVersion = "2025-04";
 export const billingEnabled = process.env.BILLING_ENABLED === "true";
 export const PLAN_NAME = process.env.BILLING_PLAN_NAME || "Pro";
 export const PLAN_AMOUNT = Number(process.env.BILLING_AMOUNT) || 5;
+export const BILLING_TRIAL_DAYS = Number(process.env.BILLING_TRIAL_DAYS) || 0;
 export const BILLING_TEST = process.env.BILLING_TEST === "true";
 
 function isWebhookRegistrationErrorBypassable(error) {
@@ -23,6 +24,7 @@ function isWebhookRegistrationErrorBypassable(error) {
 const billingConfig = billingEnabled
   ? {
       [PLAN_NAME]: {
+        trialDays: BILLING_TRIAL_DAYS,
         lineItems: [
           {
             amount: PLAN_AMOUNT,
