@@ -6,9 +6,7 @@ import sharp from "sharp";
 import FormData from "form-data";
 import path from "path";
 import fs from "fs";
-import { apiVersion, authenticate, billingEnabled, PLAN_NAME } from "../shopify.server";
 import { BRAND } from "../lib/brand";
-import { getBillingStatusOrFree } from "../lib/billing.server";
 
 const OPTIMIZED_ALT = "Image Squish optimized image";
 const WATERMARKED_ALT = "Image Squish watermarked image";
@@ -155,28 +153,34 @@ mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
 }`;
 
 export const loader = async ({ request }) => {
+  const [{ apiVersion, authenticate, billingEnabled, PLAN_NAME }, { getUsageEntitlement }] =
+    await Promise.all([import("../shopify.server"), import("../lib/billing.server")]);
   const { billing, session } = await authenticate.admin(request);
   const { shop, accessToken } = session;
   const savedWatermark = readSavedWatermarkInfo(shop);
 
-  let hasPaidPlan = true;
-
-  if (billingEnabled) {
-    const billingCheck = await getBillingStatusOrFree({
-      request,
-      billing,
-      session,
-      plans: [PLAN_NAME],
-    });
-    hasPaidPlan = billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0;
-  }
+  const entitlement = billingEnabled
+    ? await getUsageEntitlement({
+        request,
+        billing,
+        session,
+        plans: [PLAN_NAME],
+      })
+    : {
+        hasPaidPlan: false,
+        freeUsageCount: 0,
+        freeUsageLimit: 0,
+        freeUsageRemaining: 0,
+        quotaExceeded: false,
+        canProcess: true,
+      };
 
   if (!accessToken) {
     return json({
       products: [],
       shop,
-      hasPaidPlan,
       savedWatermarkName: savedWatermark?.name || null,
+      ...entitlement,
     });
   }
 
@@ -195,13 +199,19 @@ export const loader = async ({ request }) => {
   return json({
     products,
     shop,
-    hasPaidPlan,
     savedWatermarkName: savedWatermark?.name || null,
+    ...entitlement,
   });
 };
 
 export const action = async ({ request }) => {
   try {
+    const [shopifyServer, billingServer] = await Promise.all([
+      import("../shopify.server"),
+      import("../lib/billing.server"),
+    ]);
+    const { apiVersion, authenticate, billingEnabled, PLAN_NAME } = shopifyServer;
+    const { getUpgradeMessage, getUsageEntitlement, incrementFreeUsage } = billingServer;
     const { billing, session } = await authenticate.admin(request);
     const requestFormData = await request.formData();
     const { mediaId, imageSrc, type, productId } = Object.fromEntries(
@@ -213,19 +223,30 @@ export const action = async ({ request }) => {
       throw new Error("Missing required fields.");
     }
 
-    if (billingEnabled) {
-      const billingCheck = await getBillingStatusOrFree({
-        request,
-        billing,
-        session,
-        plans: [PLAN_NAME],
-      });
+    const entitlement = billingEnabled
+      ? await getUsageEntitlement({
+          request,
+          billing,
+          session,
+          plans: [PLAN_NAME],
+        })
+      : {
+          hasPaidPlan: false,
+          freeUsageCount: 0,
+          freeUsageLimit: 0,
+          freeUsageRemaining: 0,
+          quotaExceeded: false,
+          canProcess: true,
+        };
 
-      const hasPaid = billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0;
-
-      if (!hasPaid) {
-        return json({ success: false, message: `Subscribe to the ${PLAN_NAME} plan to use this feature.` }, { status: 403 });
-      }
+    if (!entitlement.canProcess) {
+      return json(
+        {
+          success: false,
+          message: getUpgradeMessage(entitlement.freeUsageLimit),
+        },
+        { status: 403 },
+      );
     }
 
     const { shop, accessToken } = session;
@@ -398,6 +419,10 @@ export const action = async ({ request }) => {
     }
 
     const newMediaId = uploadResult?.data?.productCreateMedia?.media?.[0]?.id;
+
+    if (billingEnabled && !entitlement.hasPaidPlan) {
+      await incrementFreeUsage(shop);
+    }
 
     return json({
       success: true,
@@ -700,13 +725,31 @@ function NotificationBanner({ notification }) {
 }
 
 export default function StudioPage() {
-  const { products, shop, hasPaidPlan } = useLoaderData();
+  const {
+    products,
+    shop,
+    billingEnabled: isBillingEnabled,
+    hasPaidPlan,
+    freeUsageCount,
+    freeUsageLimit,
+    freeUsageRemaining,
+    quotaExceeded,
+    savedWatermarkName,
+  } = useLoaderData();
   const fetcher = useFetcher();
   const [loadingId, setLoadingId] = useState(null);
   const [watermark, setWatermark] = useState(null);
   const [processedImages, setProcessedImages] = useState({});
   const [notification, setNotification] = useState(null);
-  const savedWatermarkName = useLoaderData().savedWatermarkName;
+  const canUseFreePlan = hasPaidPlan || !quotaExceeded;
+  const quotaMessage = hasPaidPlan
+    ? "Unlimited processing is active on your paid plan."
+    : quotaExceeded
+    ? `You have used all ${freeUsageLimit} free image operations. Upgrade to continue.`
+    : `${freeUsageRemaining} of ${freeUsageLimit} free image operations remaining.`;
+  const quotaTone = hasPaidPlan ? "#EFF6FF" : quotaExceeded ? "#FEF2F2" : "#F0FDF4";
+  const quotaBorder = hasPaidPlan ? "#BFDBFE" : quotaExceeded ? "#FECACA" : "#BBF7D0";
+  const quotaColor = hasPaidPlan ? "#1D4ED8" : quotaExceeded ? "#991B1B" : "#166534";
 
   useEffect(() => {
     if (fetcher.state !== "idle" || !fetcher.data) {
@@ -804,6 +847,10 @@ export default function StudioPage() {
               <div style={styles.statsRow}>
                 <SummaryStat number={products.length} label="Products" />
                 <SummaryStat number={processedCount} label="Processed" />
+                <SummaryStat
+                  number={hasPaidPlan ? "∞" : freeUsageRemaining}
+                  label={hasPaidPlan ? "Remaining" : "Free left"}
+                />
               </div>
             </div>
 
@@ -822,6 +869,14 @@ export default function StudioPage() {
                 <p style={styles.sideLabel}>Output</p>
                 <p style={{ ...styles.sideValue, fontSize: "13px", fontWeight: 400, opacity: 0.8 }}>
                   Replaces the original media on each product.
+                </p>
+              </div>
+              <div>
+                <p style={styles.sideLabel}>Plan</p>
+                <p style={{ ...styles.sideValue, fontSize: "13px", fontWeight: 400, opacity: 0.8 }}>
+                  {hasPaidPlan
+                    ? "Unlimited paid plan"
+                    : `${freeUsageCount} used · ${freeUsageRemaining} free left`}
                 </p>
               </div>
             </div>
@@ -868,6 +923,31 @@ export default function StudioPage() {
           {/* Product grid */}
           <section>
             <NotificationBanner notification={notification} />
+            {isBillingEnabled ? (
+              <div
+                style={{
+                  ...styles.banner,
+                  background: quotaTone,
+                  border: `1px solid ${quotaBorder}`,
+                }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    color: quotaColor,
+                  }}
+                >
+                  {quotaMessage}
+                </p>
+                {!hasPaidPlan ? (
+                  <p style={{ margin: "4px 0 0", fontSize: "13px", color: quotaColor }}>
+                    Upgrade any time for unlimited image processing.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
 
             {products.length === 0 ? (
               <div style={styles.emptyState}>
@@ -928,18 +1008,18 @@ export default function StudioPage() {
                             <div style={styles.actionRow}>
                               <button
                                 type="button"
-                                disabled={isBusy || !hasPaidPlan}
+                                disabled={isBusy || !canUseFreePlan}
                                 onClick={() =>
                                   handleClick(currentMediaId, currentImage, "compress", node.id)
                                 }
                                 style={{
                                   ...styles.button,
-                                  background: isBusy || !hasPaidPlan ? "#94A3B8" : "#4F46E5",
+                                  background: isBusy || !canUseFreePlan ? "#94A3B8" : "#4F46E5",
                                   color: "#fff",
-                                  opacity: (isBusy && requestedType !== "compress") || !hasPaidPlan ? 0.6 : 1,
+                                  opacity: (isBusy && requestedType !== "compress") || !canUseFreePlan ? 0.6 : 1,
                                 }}
                               >
-                                {!hasPaidPlan
+                                {!canUseFreePlan
                                   ? "Upgrade"
                                   : isBusy && requestedType === "compress"
                                   ? "Compressing..."
@@ -949,18 +1029,18 @@ export default function StudioPage() {
                               </button>
                               <button
                                 type="button"
-                                disabled={isBusy || !hasPaidPlan}
+                                disabled={isBusy || !canUseFreePlan}
                                 onClick={() =>
                                   handleClick(currentMediaId, currentImage, "watermark", node.id)
                                 }
                                 style={{
                                   ...styles.button,
-                                  background: isBusy || !hasPaidPlan ? "#94A3B8" : "#1E293B",
+                                  background: isBusy || !canUseFreePlan ? "#94A3B8" : "#1E293B",
                                   color: "#fff",
-                                  opacity: (isBusy && requestedType !== "watermark") || !hasPaidPlan ? 0.6 : 1,
+                                  opacity: (isBusy && requestedType !== "watermark") || !canUseFreePlan ? 0.6 : 1,
                                 }}
                               >
-                                {!hasPaidPlan
+                                {!canUseFreePlan
                                   ? "Upgrade"
                                   : isBusy && requestedType === "watermark"
                                   ? "Applying..."

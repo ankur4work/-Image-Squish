@@ -1,5 +1,8 @@
 import { redirect } from "@remix-run/node";
+import prisma from "../db.server";
 import { sessionStorage, BILLING_TEST } from "../shopify.server";
+
+export const FREE_USAGE_LIMIT = Number(process.env.FREE_USAGE_LIMIT) || 20;
 
 function isBillingStatusFallbackError(error) {
   const message = String(error?.message || "");
@@ -70,4 +73,57 @@ export async function getBillingStatusOrFree({ request, billing, session, plans 
 
     throw error;
   }
+}
+
+export async function getOrCreateShopUsage(shop, accessToken = "") {
+  return prisma.shop.upsert({
+    where: { shop },
+    update: accessToken ? { accessToken } : {},
+    create: {
+      shop,
+      accessToken,
+    },
+  });
+}
+
+export async function getUsageEntitlement({ request, billing, session, plans }) {
+  const billingCheck = await getBillingStatusOrFree({
+    request,
+    billing,
+    session,
+    plans,
+  });
+
+  const hasPaidPlan =
+    billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0;
+
+  const usage = await getOrCreateShopUsage(session.shop, session.accessToken || "");
+  const freeUsageCount = usage.freeUsageCount || 0;
+  const freeUsageLimit = FREE_USAGE_LIMIT;
+  const freeUsageRemaining = Math.max(0, freeUsageLimit - freeUsageCount);
+  const quotaExceeded = !hasPaidPlan && freeUsageRemaining <= 0;
+
+  return {
+    hasPaidPlan,
+    freeUsageCount,
+    freeUsageLimit,
+    freeUsageRemaining,
+    quotaExceeded,
+    canProcess: hasPaidPlan || freeUsageRemaining > 0,
+  };
+}
+
+export async function incrementFreeUsage(shop) {
+  return prisma.shop.update({
+    where: { shop },
+    data: {
+      freeUsageCount: {
+        increment: 1,
+      },
+    },
+  });
+}
+
+export function getUpgradeMessage(freeUsageLimit = FREE_USAGE_LIMIT) {
+  return `You have used all ${freeUsageLimit} free image operations. Upgrade to continue.`;
 }

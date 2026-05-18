@@ -10,36 +10,37 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { json, redirect } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { BRAND } from "../lib/brand";
-import { getBillingStatusOrFree } from "../lib/billing.server";
-import { authenticate, PLAN_NAME, PLAN_AMOUNT, billingEnabled } from "../shopify.server";
 import { PersistentLink } from "./components/PersistentLink";
 
 export async function loader({ request }) {
+  const [{ authenticate, PLAN_NAME, PLAN_AMOUNT, billingEnabled }, { getUsageEntitlement }] =
+    await Promise.all([import("../shopify.server"), import("../lib/billing.server")]);
+
   if (!billingEnabled) {
     return redirect("/app");
   }
 
   const { billing, session } = await authenticate.admin(request);
-
-  const billingCheck = await getBillingStatusOrFree({
+  const entitlement = await getUsageEntitlement({
     request,
     billing,
     session,
     plans: [PLAN_NAME],
   });
 
-  const hasPaidPlan =
-    billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0;
-
   return json({
-    hasPaidPlan,
+    hasPaidPlan: entitlement.hasPaidPlan,
+    freeUsageCount: entitlement.freeUsageCount,
+    freeUsageRemaining: entitlement.freeUsageRemaining,
+    freeUsageLimit: entitlement.freeUsageLimit,
     planName: PLAN_NAME,
     planAmount: PLAN_AMOUNT,
   });
 }
 
 export default function PlansPage() {
-  const { hasPaidPlan, planName, planAmount } = useLoaderData();
+  const { hasPaidPlan, freeUsageCount, freeUsageRemaining, freeUsageLimit, planName, planAmount } =
+    useLoaderData();
 
   return (
     <Page>
@@ -75,10 +76,10 @@ export default function PlansPage() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxWidth: "320px", margin: "0 auto 28px", textAlign: "left" }}>
             {[
+              `First ${freeUsageLimit || FREE_USAGE_LIMIT} image operations free`,
               "One-click image compression",
               "Custom watermark uploads",
-              "Unlimited product processing",
-              "Works inside Shopify admin",
+              "Unlimited product processing after upgrade",
             ].map((f) => (
               <div key={f} style={{ display: "flex", gap: "8px", fontSize: "15px" }}>
                 <span style={{ flexShrink: 0 }}>&#10003;</span>
@@ -92,11 +93,24 @@ export default function PlansPage() {
           ) : (
             <PersistentLink to="/app/upgrade">
               <Button variant="primary" size="large">
-                Subscribe — ${planAmount}/mo
+                Upgrade — ${planAmount}/mo
               </Button>
             </PersistentLink>
           )}
         </div>
+
+        <Card>
+          <BlockStack gap="200">
+            <Text as="h2" variant="headingMd">
+              {hasPaidPlan ? "Unlimited access is active" : "Free plan status"}
+            </Text>
+            <Text as="p" variant="bodyMd" tone="subdued">
+              {hasPaidPlan
+                ? "Your paid plan includes unlimited image processing."
+                : `${freeUsageCount} of ${freeUsageLimit} free image operations used. ${freeUsageRemaining} remaining before upgrade is required.`}
+            </Text>
+          </BlockStack>
+        </Card>
 
         {hasPaidPlan ? (
           <Card>
@@ -104,7 +118,7 @@ export default function PlansPage() {
               <BlockStack gap="100">
                 <Text as="h2" variant="headingMd">Need to cancel?</Text>
                 <Text as="p" variant="bodyMd" tone="subdued">
-                  You'll return to the free tier with limited access.
+                  You'll return to the free tier with your existing usage count preserved.
                 </Text>
               </BlockStack>
               <PersistentLink to="/app/cancel">
