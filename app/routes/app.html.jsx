@@ -7,6 +7,7 @@ import FormData from "form-data";
 import path from "path";
 import fs from "fs";
 import { BRAND } from "../lib/brand";
+import { PersistentLink } from "./components/PersistentLink";
 
 const OPTIMIZED_ALT = "Image Squish optimized image";
 const WATERMARKED_ALT = "Image Squish watermarked image";
@@ -1006,48 +1007,77 @@ export default function StudioPage() {
                             </div>
 
                             <div style={styles.actionRow}>
-                              <button
-                                type="button"
-                                disabled={isBusy || !canUseFreePlan}
-                                onClick={() =>
-                                  handleClick(currentMediaId, currentImage, "compress", node.id)
-                                }
-                                style={{
-                                  ...styles.button,
-                                  background: isBusy || !canUseFreePlan ? "#94A3B8" : "#4F46E5",
-                                  color: "#fff",
-                                  opacity: (isBusy && requestedType !== "compress") || !canUseFreePlan ? 0.6 : 1,
-                                }}
-                              >
-                                {!canUseFreePlan
-                                  ? "Upgrade"
-                                  : isBusy && requestedType === "compress"
-                                  ? "Compressing..."
-                                  : persistedState === "optimized" || persistedState === "watermarked"
-                                  ? "Re-compress"
-                                  : "Compress"}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={isBusy || !canUseFreePlan}
-                                onClick={() =>
-                                  handleClick(currentMediaId, currentImage, "watermark", node.id)
-                                }
-                                style={{
-                                  ...styles.button,
-                                  background: isBusy || !canUseFreePlan ? "#94A3B8" : "#1E293B",
-                                  color: "#fff",
-                                  opacity: (isBusy && requestedType !== "watermark") || !canUseFreePlan ? 0.6 : 1,
-                                }}
-                              >
-                                {!canUseFreePlan
-                                  ? "Upgrade"
-                                  : isBusy && requestedType === "watermark"
-                                  ? "Applying..."
-                                  : persistedState === "watermarked"
-                                  ? "Re-watermark"
-                                  : "Watermark"}
-                              </button>
+                              {canUseFreePlan ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() =>
+                                      handleClick(currentMediaId, currentImage, "compress", node.id)
+                                    }
+                                    style={{
+                                      ...styles.button,
+                                      background: isBusy ? "#94A3B8" : "#4F46E5",
+                                      color: "#fff",
+                                      opacity: isBusy && requestedType !== "compress" ? 0.6 : 1,
+                                    }}
+                                  >
+                                    {isBusy && requestedType === "compress"
+                                      ? "Compressing..."
+                                      : persistedState === "optimized" || persistedState === "watermarked"
+                                      ? "Re-compress"
+                                      : "Compress"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() =>
+                                      handleClick(currentMediaId, currentImage, "watermark", node.id)
+                                    }
+                                    style={{
+                                      ...styles.button,
+                                      background: isBusy ? "#94A3B8" : "#1E293B",
+                                      color: "#fff",
+                                      opacity: isBusy && requestedType !== "watermark" ? 0.6 : 1,
+                                    }}
+                                  >
+                                    {isBusy && requestedType === "watermark"
+                                      ? "Applying..."
+                                      : persistedState === "watermarked"
+                                      ? "Re-watermark"
+                                      : "Watermark"}
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <PersistentLink to="/app/upgrade" style={{ flex: 1 }}>
+                                    <button
+                                      type="button"
+                                      style={{
+                                        ...styles.button,
+                                        width: "100%",
+                                        background: "#4F46E5",
+                                        color: "#fff",
+                                      }}
+                                    >
+                                      Upgrade to continue
+                                    </button>
+                                  </PersistentLink>
+                                  <PersistentLink to="/app/plans" style={{ flex: 1 }}>
+                                    <button
+                                      type="button"
+                                      style={{
+                                        ...styles.button,
+                                        width: "100%",
+                                        background: "#1E293B",
+                                        color: "#fff",
+                                      }}
+                                    >
+                                      View plan
+                                    </button>
+                                  </PersistentLink>
+                                </>
+                              )}
                             </div>
                           </div>
                         </>
