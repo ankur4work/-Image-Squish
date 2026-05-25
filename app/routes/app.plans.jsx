@@ -8,7 +8,8 @@ import {
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { json, redirect } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import { useLoaderData, useRevalidator } from "@remix-run/react";
+import { useEffect } from "react";
 import { BRAND } from "../lib/brand";
 import { PersistentLink } from "./components/PersistentLink";
 
@@ -41,6 +42,14 @@ export async function loader({ request }) {
 export default function PlansPage() {
   const { hasPaidPlan, freeUsageCount, freeUsageRemaining, freeUsageLimit, planName, planAmount } =
     useLoaderData();
+  const revalidator = useRevalidator();
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("billing_updated") === "1") {
+      revalidator.revalidate();
+    }
+  }, [revalidator]);
 
   return (
     <Page>
@@ -76,7 +85,7 @@ export default function PlansPage() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxWidth: "320px", margin: "0 auto 28px", textAlign: "left" }}>
             {[
-              `First ${freeUsageLimit || FREE_USAGE_LIMIT} image operations free`,
+              `First ${freeUsageLimit} image operations free`,
               "One-click image compression",
               "Custom watermark uploads",
               "Unlimited product processing after upgrade",

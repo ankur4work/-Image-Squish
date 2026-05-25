@@ -11,7 +11,7 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const host = url.searchParams.get("host") || "";
   const appUrl = (process.env.SHOPIFY_APP_URL || "").replace(/\/$/, "");
-  const returnUrl = `${appUrl}/app?shop=${session.shop}&host=${host}`;
+  const returnUrl = `${appUrl}/app/plans?shop=${session.shop}&host=${host}&billing_updated=1`;
 
   await billing.request({
     plan: PLAN_NAME,
