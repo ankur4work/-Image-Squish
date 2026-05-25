@@ -86,6 +86,12 @@ export async function getOrCreateShopUsage(shop, accessToken = "") {
   });
 }
 
+export function hasActiveSubscription(billingCheck) {
+  return Boolean(
+    billingCheck?.appSubscriptions?.length > 0 || billingCheck?.hasActivePayment,
+  );
+}
+
 export async function getUsageEntitlement({ request, billing, session, plans }) {
   const billingCheck = await getBillingStatusOrFree({
     request,
@@ -94,8 +100,7 @@ export async function getUsageEntitlement({ request, billing, session, plans }) 
     plans,
   });
 
-  const hasPaidPlan =
-    billingCheck.hasActivePayment && billingCheck.appSubscriptions.length > 0;
+  const hasPaidPlan = hasActiveSubscription(billingCheck);
 
   const usage = await getOrCreateShopUsage(session.shop, session.accessToken || "");
   const freeUsageCount = usage.freeUsageCount || 0;

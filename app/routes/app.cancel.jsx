@@ -1,6 +1,6 @@
 import { redirect } from "@remix-run/node";
 import { authenticate, PLAN_NAME, billingEnabled } from "../shopify.server";
-import { getBillingStatusOrFree } from "../lib/billing.server";
+import { getBillingStatusOrFree, hasActiveSubscription } from "../lib/billing.server";
 
 export const loader = async ({ request }) => {
   if (!billingEnabled) {
@@ -16,7 +16,7 @@ export const loader = async ({ request }) => {
     plans: [PLAN_NAME],
   });
 
-  if (!billingCheck.hasActivePayment || billingCheck.appSubscriptions.length === 0) {
+  if (!hasActiveSubscription(billingCheck) || billingCheck.appSubscriptions.length === 0) {
     return redirect("/app");
   }
 
