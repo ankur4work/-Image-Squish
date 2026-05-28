@@ -58,7 +58,12 @@ export async function requestBillingSafely({
 
 export async function getBillingStatusOrFree({ request, billing, session, plans }) {
   try {
-    return await billing.check({ plans, isTest: BILLING_TEST });
+    const billingChecks = await Promise.all([
+      billing.check({ plans, isTest: BILLING_TEST }),
+      billing.check({ plans, isTest: !BILLING_TEST }),
+    ]);
+
+    return billingChecks.find(hasActiveSubscription) || billingChecks[0];
   } catch (error) {
     await refreshBillingSessionIfNeeded({ request, session, error });
 
