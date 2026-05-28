@@ -11,7 +11,7 @@ export const loader = async ({ request }) => {
   // Return to Shopify admin (a Shopify-owned surface) so the user is never
   // asked to manually enter a myshopify URL — required by App Store rule 2.3.1.
   const shopSubdomain = session.shop.replace(".myshopify.com", "");
-  const returnUrl = `https://admin.shopify.com/store/${shopSubdomain}/apps/imagesquish/plans`;
+  const returnUrl = `https://admin.shopify.com/store/${shopSubdomain}/apps/imagesquish/app/plans`;
 
   await billing.request({
     plan: PLAN_NAME,
