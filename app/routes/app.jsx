@@ -63,6 +63,7 @@ export default function App() {
       <NavMenu>
         <PersistentLink to="/app">Overview</PersistentLink>
         <PersistentLink to="/app/html">Studio</PersistentLink>
+        <PersistentLink to="/app/plans">Plans</PersistentLink>
       </NavMenu>
 
       {isLoading ? (
