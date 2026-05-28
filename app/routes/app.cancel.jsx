@@ -2,7 +2,9 @@ import { redirect } from "@remix-run/node";
 import { authenticate, PLAN_NAME, billingEnabled } from "../shopify.server";
 import { getBillingStatusOrFree, hasActiveSubscription } from "../lib/billing.server";
 
-export const loader = async ({ request }) => {
+export const loader = async () => redirect("/app/plans");
+
+export const action = async ({ request }) => {
   if (!billingEnabled) {
     return redirect("/app");
   }
@@ -17,7 +19,7 @@ export const loader = async ({ request }) => {
   });
 
   if (!hasActiveSubscription(billingCheck) || billingCheck.appSubscriptions.length === 0) {
-    return redirect("/app");
+    return redirect("/app/plans?billing_updated=1");
   }
 
   const subscription = billingCheck.appSubscriptions[0];
@@ -27,5 +29,5 @@ export const loader = async ({ request }) => {
     prorate: true,
   });
 
-  return redirect("/app");
+  return redirect("/app/plans?billing_updated=1");
 };

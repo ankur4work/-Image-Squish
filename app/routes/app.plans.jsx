@@ -8,7 +8,7 @@ import {
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { json, redirect } from "@remix-run/node";
-import { useLoaderData, useRevalidator } from "@remix-run/react";
+import { Form, useLoaderData, useNavigation, useRevalidator } from "@remix-run/react";
 import { useEffect } from "react";
 import { BRAND } from "../lib/brand";
 import { PersistentLink } from "./components/PersistentLink";
@@ -42,7 +42,9 @@ export async function loader({ request }) {
 export default function PlansPage() {
   const { hasPaidPlan, freeUsageCount, freeUsageRemaining, freeUsageLimit, planName, planAmount } =
     useLoaderData();
+  const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const isCanceling = navigation.state === "submitting" && navigation.formAction?.endsWith("/app/cancel");
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -130,9 +132,11 @@ export default function PlansPage() {
                   You'll return to the free tier with your existing usage count preserved.
                 </Text>
               </BlockStack>
-              <PersistentLink to="/app/cancel">
-                <Button tone="critical">Cancel plan</Button>
-              </PersistentLink>
+              <Form method="post" action="/app/cancel">
+                <Button submit tone="critical" loading={isCanceling} disabled={isCanceling}>
+                  Cancel plan
+                </Button>
+              </Form>
             </InlineStack>
           </Card>
         ) : null}
