@@ -8,10 +8,10 @@ export const loader = async ({ request }) => {
 
   const { billing, session } = await authenticate.admin(request);
 
-  const url = new URL(request.url);
-  const host = url.searchParams.get("host") || "";
-  const appUrl = (process.env.SHOPIFY_APP_URL || "").replace(/\/$/, "");
-  const returnUrl = `${appUrl}/app/plans?shop=${session.shop}&host=${host}&billing_updated=1`;
+  // Return to Shopify admin (a Shopify-owned surface) so the user is never
+  // asked to manually enter a myshopify URL — required by App Store rule 2.3.1.
+  const shopSubdomain = session.shop.replace(".myshopify.com", "");
+  const returnUrl = `https://admin.shopify.com/store/${shopSubdomain}/apps/imagesquish/plans`;
 
   await billing.request({
     plan: PLAN_NAME,
