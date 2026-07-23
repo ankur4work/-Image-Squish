@@ -12,6 +12,7 @@ import { PersistentLink } from "./components/PersistentLink";
 const OPTIMIZED_ALT = "Image Squish optimized image";
 const WATERMARKED_ALT = "Image Squish watermarked image";
 const WATERMARK_UPLOAD_DIR = path.resolve("public/uploads/watermarks");
+const ORIGINAL_BACKUP_DIR = path.resolve("public/uploads/originals");
 
 const productQuery = `
 {
@@ -121,6 +122,71 @@ async function saveShopWatermark({ shop, sourceBuffer, originalName }) {
   return resizedWatermark;
 }
 
+function getOriginalBackupPaths(shop, productId) {
+  const safeShopName = shop.replace(/[^a-z0-9.-]/gi, "_");
+  const safeProductId = String(productId).replace(/[^a-z0-9]/gi, "_");
+  const dir = path.join(ORIGINAL_BACKUP_DIR, safeShopName);
+  return {
+    dir,
+    imagePath: path.join(dir, `${safeProductId}.bin`),
+    metaPath: path.join(dir, `${safeProductId}.json`),
+  };
+}
+
+function readOriginalBackup(shop, productId) {
+  const { imagePath, metaPath } = getOriginalBackupPaths(shop, productId);
+
+  if (!fs.existsSync(imagePath)) {
+    return null;
+  }
+
+  let metadata = { mimeType: "image/jpeg", fileExtension: "jpg" };
+
+  if (fs.existsSync(metaPath)) {
+    try {
+      metadata = { ...metadata, ...JSON.parse(fs.readFileSync(metaPath, "utf8")) };
+    } catch {
+      // Fall back to defaults if metadata is unreadable.
+    }
+  }
+
+  return { imagePath, metaPath, ...metadata };
+}
+
+// Store the untouched original image the first time a product is processed so the
+// merchant can always restore it (e.g. remove a watermark they no longer want).
+async function saveOriginalBackup({ shop, productId, buffer, mimeType, fileExtension }) {
+  const { dir, imagePath, metaPath } = getOriginalBackupPaths(shop, productId);
+  fs.mkdirSync(dir, { recursive: true });
+  await fs.promises.writeFile(imagePath, buffer);
+  await fs.promises.writeFile(
+    metaPath,
+    JSON.stringify(
+      {
+        mimeType,
+        fileExtension,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+function deleteOriginalBackup(shop, productId) {
+  const { imagePath, metaPath } = getOriginalBackupPaths(shop, productId);
+  try {
+    fs.unlinkSync(imagePath);
+  } catch {
+    // Ignore if it is already gone.
+  }
+  try {
+    fs.unlinkSync(metaPath);
+  } catch {
+    // Ignore if it is already gone.
+  }
+}
+
 function getMediaProcessingState(image) {
   const altText = image?.altText || "";
 
@@ -197,10 +263,15 @@ export const loader = async ({ request }) => {
   const result = await response.json();
   const products = result?.data?.products?.edges || [];
 
+  const restorableProductIds = products
+    .filter(({ node }) => readOriginalBackup(shop, node.id))
+    .map(({ node }) => node.id);
+
   return json({
     products,
     shop,
     savedWatermarkName: savedWatermark?.name || null,
+    restorableProductIds,
     ...entitlement,
   });
 };
@@ -260,15 +331,40 @@ export const action = async ({ request }) => {
     const imageResponse = await fetch(imageUrl);
     const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
     const originalSizeKB = (imageBuffer.length / 1024).toFixed(2);
+    const sourceContentType = imageResponse.headers.get("content-type") || "";
 
     let processedBuffer;
     let mimeType = "image/jpeg";
     let fileExtension = "jpg";
+    let outputAlt = "";
+    let successMessage = "Image updated successfully.";
+    let reportSizes = true;
+
+    // Preserve the pristine original the first time we modify a product's image so
+    // the merchant can restore it later (e.g. remove a watermark they dislike).
+    if (type === "compress" || type === "watermark") {
+      if (!readOriginalBackup(shop, productId)) {
+        const originalExtension = sourceContentType.includes("png")
+          ? "png"
+          : sourceContentType.includes("webp")
+          ? "webp"
+          : "jpg";
+        await saveOriginalBackup({
+          shop,
+          productId,
+          buffer: imageBuffer,
+          mimeType: sourceContentType || "image/jpeg",
+          fileExtension: originalExtension,
+        });
+      }
+    }
 
     if (type === "compress") {
       processedBuffer = await sharp(imageBuffer)
         .jpeg({ quality: 50, progressive: true })
         .toBuffer();
+      outputAlt = OPTIMIZED_ALT;
+      successMessage = "Image optimized successfully.";
     } else if (type === "watermark") {
       let watermarkBuffer;
 
@@ -299,6 +395,23 @@ export const action = async ({ request }) => {
         .toBuffer();
       mimeType = "image/png";
       fileExtension = "png";
+      outputAlt = WATERMARKED_ALT;
+      successMessage = "Watermark applied successfully.";
+    } else if (type === "remove") {
+      const backup = readOriginalBackup(shop, productId);
+
+      if (!backup) {
+        throw new Error(
+          "No saved original found for this product. Watermarks can only be removed from images that were processed with Image Squish.",
+        );
+      }
+
+      processedBuffer = await fs.promises.readFile(backup.imagePath);
+      mimeType = backup.mimeType || "image/jpeg";
+      fileExtension = backup.fileExtension || "jpg";
+      outputAlt = "";
+      successMessage = "Watermark removed. Original image restored.";
+      reportSizes = false;
     } else {
       throw new Error("Unknown processing type.");
     }
@@ -405,7 +518,7 @@ export const action = async ({ request }) => {
             {
               originalSource: stagedTarget.resourceUrl,
               mediaContentType: "IMAGE",
-              alt: type === "compress" ? "Image Squish optimized image" : "Image Squish watermarked image",
+              alt: outputAlt,
             },
           ],
         },
@@ -421,18 +534,23 @@ export const action = async ({ request }) => {
 
     const newMediaId = uploadResult?.data?.productCreateMedia?.media?.[0]?.id;
 
-    if (billingEnabled && !entitlement.hasPaidPlan) {
+    // The original has been restored, so drop the backup and let the merchant
+    // start fresh if they process this product again.
+    if (type === "remove") {
+      deleteOriginalBackup(shop, productId);
+    }
+
+    // Restoring the original does not consume a free-plan credit.
+    if (billingEnabled && !entitlement.hasPaidPlan && type !== "remove") {
       await incrementFreeUsage(shop);
     }
 
     return json({
       success: true,
-      message:
-        type === "compress"
-          ? "Image optimized successfully."
-          : "Watermark applied successfully.",
-      originalSizeKB,
-      processedSizeKB,
+      type,
+      message: successMessage,
+      originalSizeKB: reportSizes ? originalSizeKB : null,
+      processedSizeKB: reportSizes ? processedSizeKB : null,
       productId,
       newImageUrl: stagedTarget.resourceUrl,
       newMediaId,
@@ -736,12 +854,16 @@ export default function StudioPage() {
     freeUsageRemaining,
     quotaExceeded,
     savedWatermarkName,
+    restorableProductIds,
   } = useLoaderData();
   const fetcher = useFetcher();
   const [loadingId, setLoadingId] = useState(null);
   const [watermark, setWatermark] = useState(null);
   const [processedImages, setProcessedImages] = useState({});
   const [notification, setNotification] = useState(null);
+  const [restorableIds, setRestorableIds] = useState(
+    () => new Set(restorableProductIds || []),
+  );
   const canUseFreePlan = hasPaidPlan || !quotaExceeded;
   const quotaMessage = hasPaidPlan
     ? "Unlimited processing is active on your paid plan."
@@ -758,7 +880,7 @@ export default function StudioPage() {
     }
 
     if (fetcher.data.success) {
-      const { message, originalSizeKB, processedSizeKB, productId, newImageUrl, newMediaId } =
+      const { type, message, originalSizeKB, processedSizeKB, productId, newImageUrl, newMediaId } =
         fetcher.data;
 
       const savings =
@@ -779,14 +901,31 @@ export default function StudioPage() {
             : null,
       });
 
+      const nextState =
+        type === "watermark" ? "watermarked" : type === "compress" ? "optimized" : "original";
+
       if (newImageUrl && productId) {
         setProcessedImages((previous) => ({
           ...previous,
           [productId]: {
             url: `${newImageUrl}?t=${Date.now()}`,
             mediaId: newMediaId || previous[productId]?.mediaId,
+            state: nextState,
           },
         }));
+      }
+
+      // Track whether a restorable original backup exists for this product.
+      if (productId) {
+        setRestorableIds((previous) => {
+          const next = new Set(previous);
+          if (type === "remove") {
+            next.delete(productId);
+          } else {
+            next.add(productId);
+          }
+          return next;
+        });
       }
     } else {
       setNotification({
@@ -917,6 +1056,9 @@ export default function StudioPage() {
             <div style={styles.noteList}>
               <div style={styles.noteItem}>Compress outputs a lighter JPG for faster loading.</div>
               <div style={styles.noteItem}>Watermark outputs a PNG with your mark applied.</div>
+              <div style={styles.noteItem}>
+                Changed your mind? Use "Remove watermark" to restore the original image.
+              </div>
               <div style={styles.noteItem}>Each update replaces the old media automatically.</div>
             </div>
           </aside>
@@ -970,15 +1112,16 @@ export default function StudioPage() {
                   const isBusy = loadingId === currentMediaId;
                   const requestedType = fetcher.submission?.formData.get("type");
                   const persistedState = getMediaProcessingState(originalImage);
-                  const isProcessed =
-                    Boolean(processedData) || persistedState === "optimized" || persistedState === "watermarked";
-                  const statusLabel = processedData
-                    ? "Updated"
-                    : persistedState === "watermarked"
-                    ? "Watermarked"
-                    : persistedState === "optimized"
-                    ? "Optimized"
-                    : "Original";
+                  const currentState = processedData?.state || persistedState;
+                  const isProcessed = currentState !== "original";
+                  const isWatermarked = currentState === "watermarked";
+                  const canRestore = isWatermarked && restorableIds.has(node.id);
+                  const statusLabel =
+                    currentState === "watermarked"
+                      ? "Watermarked"
+                      : currentState === "optimized"
+                      ? "Optimized"
+                      : "Original";
 
                   return (
                     <article key={node.id} style={styles.productCard}>
@@ -1024,7 +1167,7 @@ export default function StudioPage() {
                                   >
                                     {isBusy && requestedType === "compress"
                                       ? "Compressing..."
-                                      : persistedState === "optimized" || persistedState === "watermarked"
+                                      : currentState === "optimized" || currentState === "watermarked"
                                       ? "Re-compress"
                                       : "Compress"}
                                   </button>
@@ -1043,7 +1186,7 @@ export default function StudioPage() {
                                   >
                                     {isBusy && requestedType === "watermark"
                                       ? "Applying..."
-                                      : persistedState === "watermarked"
+                                      : currentState === "watermarked"
                                       ? "Re-watermark"
                                       : "Watermark"}
                                   </button>
@@ -1079,6 +1222,29 @@ export default function StudioPage() {
                                 </>
                               )}
                             </div>
+
+                            {canRestore ? (
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() =>
+                                  handleClick(currentMediaId, currentImage, "remove", node.id)
+                                }
+                                style={{
+                                  ...styles.button,
+                                  width: "100%",
+                                  marginTop: "8px",
+                                  background: "#fff",
+                                  color: "#B91C1C",
+                                  border: "1px solid #FECACA",
+                                  opacity: isBusy && requestedType !== "remove" ? 0.6 : 1,
+                                }}
+                              >
+                                {isBusy && requestedType === "remove"
+                                  ? "Removing..."
+                                  : "Remove watermark"}
+                              </button>
+                            ) : null}
                           </div>
                         </>
                       ) : (
