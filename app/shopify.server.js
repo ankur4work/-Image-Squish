@@ -12,9 +12,17 @@ import prisma from "./db.server";
 export const apiVersion = "2025-04";
 export const billingEnabled = process.env.BILLING_ENABLED === "true";
 export const PLAN_NAME = process.env.BILLING_PLAN_NAME || "Pro";
-export const PLAN_AMOUNT = Number(process.env.BILLING_AMOUNT) || 5;
+export const PLAN_AMOUNT = Number(process.env.BILLING_AMOUNT) || 30;
+export const ANNUAL_PLAN_NAME =
+  process.env.BILLING_ANNUAL_PLAN_NAME || `${PLAN_NAME} Annual`;
+export const ANNUAL_PLAN_AMOUNT = Number(process.env.BILLING_ANNUAL_AMOUNT) || 300;
+// No free trial — merchants are charged from day one on both plans.
 export const BILLING_TRIAL_DAYS = Number(process.env.BILLING_TRIAL_DAYS) || 0;
 export const BILLING_TEST = process.env.BILLING_TEST === "true";
+
+// Every billing check must look at both plans, otherwise an annual subscriber
+// reads as unpaid.
+export const BILLING_PLANS = [PLAN_NAME, ANNUAL_PLAN_NAME];
 
 function isWebhookRegistrationErrorBypassable(error) {
   const message = String(error?.message || "");
@@ -30,6 +38,16 @@ const billingConfig = billingEnabled
             amount: PLAN_AMOUNT,
             currencyCode: "USD",
             interval: BillingInterval.Every30Days,
+          },
+        ],
+      },
+      [ANNUAL_PLAN_NAME]: {
+        trialDays: BILLING_TRIAL_DAYS,
+        lineItems: [
+          {
+            amount: ANNUAL_PLAN_AMOUNT,
+            currencyCode: "USD",
+            interval: BillingInterval.Annual,
           },
         ],
       },

@@ -16,7 +16,7 @@ import { PersistentLink } from "./components/PersistentLink";
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export async function loader({ request }) {
-  const [{ authenticate, billingEnabled, PLAN_NAME, PLAN_AMOUNT }, { getUsageEntitlement }] =
+  const [{ authenticate, billingEnabled, PLAN_NAME, PLAN_AMOUNT, BILLING_PLANS }, { getUsageEntitlement }] =
     await Promise.all([import("../shopify.server"), import("../lib/billing.server")]);
   const { billing, session } = await authenticate.admin(request);
 
@@ -25,7 +25,7 @@ export async function loader({ request }) {
         request,
         billing,
         session,
-        plans: [PLAN_NAME],
+        plans: BILLING_PLANS,
       })
     : {
         hasPaidPlan: false,

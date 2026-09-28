@@ -220,7 +220,7 @@ mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
 }`;
 
 export const loader = async ({ request }) => {
-  const [{ apiVersion, authenticate, billingEnabled, PLAN_NAME }, { getUsageEntitlement }] =
+  const [{ apiVersion, authenticate, billingEnabled, BILLING_PLANS }, { getUsageEntitlement }] =
     await Promise.all([import("../shopify.server"), import("../lib/billing.server")]);
   const { billing, session } = await authenticate.admin(request);
   const { shop, accessToken } = session;
@@ -231,7 +231,7 @@ export const loader = async ({ request }) => {
         request,
         billing,
         session,
-        plans: [PLAN_NAME],
+        plans: BILLING_PLANS,
       })
     : {
         hasPaidPlan: false,
@@ -282,7 +282,7 @@ export const action = async ({ request }) => {
       import("../shopify.server"),
       import("../lib/billing.server"),
     ]);
-    const { apiVersion, authenticate, billingEnabled, PLAN_NAME } = shopifyServer;
+    const { apiVersion, authenticate, billingEnabled, BILLING_PLANS } = shopifyServer;
     const { getUpgradeMessage, getUsageEntitlement, incrementFreeUsage } = billingServer;
     const { billing, session } = await authenticate.admin(request);
     const requestFormData = await request.formData();
@@ -300,7 +300,7 @@ export const action = async ({ request }) => {
           request,
           billing,
           session,
-          plans: [PLAN_NAME],
+          plans: BILLING_PLANS,
         })
       : {
           hasPaidPlan: false,

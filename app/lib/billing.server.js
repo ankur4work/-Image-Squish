@@ -106,6 +106,9 @@ export async function getUsageEntitlement({ request, billing, session, plans }) 
   });
 
   const hasPaidPlan = hasActiveSubscription(billingCheck);
+  // Which of the configured plans the shop is actually on, so the plans page
+  // can mark the monthly or annual card as current.
+  const activePlanName = billingCheck?.appSubscriptions?.[0]?.name || null;
 
   const usage = await getOrCreateShopUsage(session.shop, session.accessToken || "");
   const freeUsageCount = usage.freeUsageCount || 0;
@@ -115,6 +118,7 @@ export async function getUsageEntitlement({ request, billing, session, plans }) 
 
   return {
     hasPaidPlan,
+    activePlanName,
     freeUsageCount,
     freeUsageLimit,
     freeUsageRemaining,
